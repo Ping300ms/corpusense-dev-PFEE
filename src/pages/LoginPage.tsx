@@ -78,7 +78,7 @@ const LoginPage = () => {
             onClick={() => supabase.auth.signInWithOAuth({ provider: 'github' })}
             className="w-full bg-gray-800 text-white hover:bg-gray-700"
           >
-            Se connecter avec GitHub
+            {t('form_oauth_github')}
           </Button>
           <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
             {t('no_account')}{' '}
