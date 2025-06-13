@@ -173,5 +173,6 @@
   "btn_logout": "Se déconnecter",
   "btn_register": "S'inscrire",
   "already_have_account": "Déjà un compte ?",
-  "no_account": "Pas encore de compte ?"
+  "no_account": "Pas encore de compte ?",
+  "form_oauth_github": "Se connecter avec GitHub"
 }
