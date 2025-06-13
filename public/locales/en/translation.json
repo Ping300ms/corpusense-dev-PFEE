@@ -124,5 +124,9 @@
   "aria_label_tags": "Available tags",
   "oups": "Oops!",
   "profile_email": "Email",
-  "btn_logout": "Log out"
+  "btn_logout": "Log out",
+  "loading": "Loading...",
+  "no_account": "Don't have an account yet?",
+  "already_have_account": "Already have an account?",
+  "btn_register": "Sign up"
 }

@@ -170,5 +170,8 @@
   "oups": "Oups !",
   "ia_generated": ". Générée par IA.",
   "profile_email": "Email",
-  "btn_logout": "Se déconnecter"
+  "btn_logout": "Se déconnecter",
+  "btn_register": "S'inscrire",
+  "already_have_account": "Déjà un compte ?",
+  "no_account": "Pas encore de compte ?"
 }
