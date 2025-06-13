@@ -4,6 +4,7 @@ export const CorpusenseRoutes = {
   MANIFEST: 'manifest',
   COLLECTIONS: 'collections',
   CONFIGURATION: 'configuration',
+  LOGIN: 'login'
 };
 
 const useAppNavigation = () => {

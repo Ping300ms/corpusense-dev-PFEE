@@ -22,7 +22,7 @@ import {
   FolderSearch2,
   List,
   MoreHorizontal,
-  ScrollText,
+  ScrollText, User,
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -74,6 +74,11 @@ const LayoutSideBar = () => {
                 title: t('page_title_collection_manager'),
                 url: CorpusenseRoutes.COLLECTIONS,
                 icon: List,
+              },
+              {
+                title: t('page_title_user'),
+                url: CorpusenseRoutes.COLLECTIONS,
+                icon: User,
               },
             ].map((item) => (
               <SidebarMenuItem key={item.title}>
