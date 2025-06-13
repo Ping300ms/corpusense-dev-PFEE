@@ -128,5 +128,6 @@
   "loading": "Loading...",
   "no_account": "Don't have an account yet?",
   "already_have_account": "Already have an account?",
-  "btn_register": "Sign up"
+  "btn_register": "Sign up",
+  "form_oauth_github": "Log in with GitHub"
 }
