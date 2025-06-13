@@ -10,6 +10,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
 import ProfilePage from '@/pages/ProfilePage.tsx';
 import RegisterPage from '@/pages/RegisterPage.tsx';
+import HomeRedirect from './components/HomeRedirect'
 
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/'
 
@@ -18,8 +19,8 @@ function App() {
     <AuthProvider>
       <BrowserRouter basename={basePath}>
         <Routes>
+          <Route index element={<HomeRedirect />} />
 
-          <Route index element={<LoginPage />} />
           <Route path={CorpusenseRoutes.LOGIN} element={<LoginPage />} />
           <Route path={CorpusenseRoutes.REGISTER} element={<RegisterPage />} />
 
@@ -40,5 +41,4 @@ function App() {
     </AuthProvider>
   )
 }
-
 export default App

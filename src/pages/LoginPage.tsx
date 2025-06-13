@@ -74,6 +74,12 @@ const LoginPage = () => {
           >
             {loading ? t('loading') : t('btn_login')}
           </Button>
+          <Button
+            onClick={() => supabase.auth.signInWithOAuth({ provider: 'github' })}
+            className="w-full bg-gray-800 text-white hover:bg-gray-700"
+          >
+            Se connecter avec GitHub
+          </Button>
           <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
             {t('no_account')}{' '}
             <Link to="/register" className="text-blue-500 hover:underline">
@@ -81,6 +87,7 @@ const LoginPage = () => {
             </Link>
           </p>
         </form>
+
       </div>
     </div>
   );
