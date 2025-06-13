@@ -77,7 +77,7 @@ const LayoutSideBar = () => {
               },
               {
                 title: t('page_title_user'),
-                url: CorpusenseRoutes.COLLECTIONS,
+                url: CorpusenseRoutes.PROFILE,
                 icon: User,
               },
             ].map((item) => (

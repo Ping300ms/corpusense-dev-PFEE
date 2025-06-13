@@ -8,6 +8,7 @@ import ManifestExplorerPage from './pages/ManifestExplorerPage'
 import LoginPage from '@/pages/LoginPage'
 import { AuthProvider } from './contexts/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
+import ProfilePage from '@/pages/ProfilePage.tsx';
 
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/'
 
@@ -21,6 +22,7 @@ function App() {
 
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
+              <Route path={CorpusenseRoutes.PROFILE} element={<ProfilePage />} />
               <Route path={CorpusenseRoutes.MANIFEST} element={<ManifestExplorerPage />} />
               <Route path={CorpusenseRoutes.COLLECTIONS} element={<CollectionsManagerPage />} />
               <Route

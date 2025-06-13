@@ -3,7 +3,7 @@
   "page_title_collection_manager": "Gestionnaire de collections",
   "page_title_collection_inspector": "Inspecteur de collections",
   "page_title_configuration": "Paramètres de configuration",
-  "page_title_user": "Profile",
+  "page_title_user": "Profil",
   "nav_application": "Sections",
   "nav_history": "Historique",
   "nav_collections": "Collection(s) ouverte(s)",
@@ -168,5 +168,7 @@
   "aria_label_thumbnail_canvas": "Aperçu du canvas {{canvas}}",
   "aria_label_tags": "Étiquettes disponibles",
   "oups": "Oups !",
-  "ia_generated": ". Générée par IA."
+  "ia_generated": ". Générée par IA.",
+  "profile_email": "Email",
+  "btn_logout": "Se déconnecter"
 }

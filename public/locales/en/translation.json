@@ -122,5 +122,7 @@
   "aria_label_selection_collection": "Select/deselect this collection",
   "aria_label_thumbnail_canvas": "Canvas preview {{canvas}}",
   "aria_label_tags": "Available tags",
-  "oups": "Oops!"
+  "oups": "Oops!",
+  "profile_email": "Email",
+  "btn_logout": "Log out"
 }
