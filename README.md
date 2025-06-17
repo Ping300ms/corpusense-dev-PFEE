@@ -17,7 +17,6 @@ Il s'agit d'un fork. Composé de 2 branches :
 - develop : branche de développement
 - gh-pages : branche contenant le build de l'application (généré automatiquement lors d'un push sur la branche develop)
 
-Cette structure nous permet d'avoir en ligne 2 builds :
+### <https://github.com/Ping300ms/corpusense-dev-PFEE>
 
-- <https://mezanno.xyz/corpusense/> : version stable de l'application
-- <https://mezanno.xyz/corpusense-dev/> : version d'essai de l'application utilisée pour les tests lors du développement
+Il s'agit d'un fork. Réalisé par l'équipe de PFEE chargée de développer une version collaborative de CorpuSense via websockets
