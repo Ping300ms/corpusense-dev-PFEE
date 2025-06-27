@@ -131,5 +131,6 @@
   "btn_register": "Sign up",
   "form_oauth_github": "Log in with GitHub",
   "form_label_confirm_password": "Confirm password",
-  "error_password_mismatch": "Passwords don't match"
+  "error_password_mismatch": "Passwords don't match",
+  "profile_not_logged_in": "You are not logged in"
 }
