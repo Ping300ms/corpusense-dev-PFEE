@@ -176,5 +176,6 @@
   "no_account": "Pas encore de compte ?",
   "form_oauth_github": "Se connecter avec GitHub",
   "form_label_confirm_password": "Confirmer le mot de passe",
-  "error_password_mismatch": "Les mots de passe ne correspondent pas"
+  "error_password_mismatch": "Les mots de passe ne correspondent pas",
+  "profile_not_logged_in": "Vous n'êtes pas connecté"
 }
