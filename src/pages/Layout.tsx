@@ -20,7 +20,7 @@ import {
   ChevronDown,
   CornerDownRight,
   FolderSearch2,
-  List,
+  List, LogOut,
   MoreHorizontal,
   ScrollText, User,
 } from 'lucide-react';
@@ -46,12 +46,24 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '../components/ui/sidebar';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/supabaseClient';
+import { useNavigate } from 'react-router-dom';
 
 const LayoutSideBar = () => {
   const { t } = useTranslation();
   const openedCollections = useAppSelector(getOpenedCollections);
   const navigation = useAppNavigation();
   const dispatch = useAppDispatch();
+
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    await navigate(CorpusenseRoutes.PROFILE);
+  };
+
 
   const handleOnClose = async (collectionId: string) => {
     await navigation.goToManifestExplorer();
@@ -89,7 +101,8 @@ const LayoutSideBar = () => {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            ))}
+        ))}
+
           </SidebarMenu>
         </SidebarGroup>
         {openedCollections.length > 0 && (
@@ -155,6 +168,15 @@ const LayoutSideBar = () => {
       </SidebarContent>
 
       <SidebarFooter>
+        {user && (
+          <SidebarMenuButton
+            onClick={() => void handleLogout()}
+            className='text-red-500 hover:bg-red-50 justify-start'
+          >
+            <LogOut className='mr-2' />
+            <span>{t('btn_logout')}</span>
+          </SidebarMenuButton>
+        )}
         <div className='flex justify-between'>
           Corpusense v{import.meta.env.VITE_APP_VERSION}
           <Link to={CorpusenseRoutes.CONFIGURATION} title={t('page_title_configuration')}>
