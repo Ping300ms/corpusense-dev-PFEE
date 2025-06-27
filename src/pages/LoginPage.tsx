@@ -24,11 +24,15 @@ const LoginPage = () => {
     if (error) {
       setErrorMsg(error.message);
     } else {
-      navigate('/collections');
+      await navigate('/collections');
     }
 
     setLoading(false);
   };
+
+  const handleOAuth = async () => {
+    await supabase.auth.signInWithOAuth({ provider: 'github' })
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen">
@@ -36,7 +40,7 @@ const LoginPage = () => {
         <h1 className="text-2xl font-semibold text-center text-gray-800 dark:text-white mb-6">
           {t('page_title_login')}
         </h1>
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={(e) => void handleLogin(e)} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
               {t('form_label_email')}
@@ -61,7 +65,7 @@ const LoginPage = () => {
               placeholder="••••••••"
             />
           </div>
-          {errorMsg && (
+          {(errorMsg != null) && (
             <div className="text-red-600 text-sm">
               {errorMsg}
             </div>
@@ -75,7 +79,7 @@ const LoginPage = () => {
             {loading ? t('loading') : t('btn_login')}
           </Button>
           <Button
-            onClick={() => supabase.auth.signInWithOAuth({ provider: 'github' })}
+            onClick={() => void handleOAuth()}
             className="w-full bg-gray-800 text-white hover:bg-gray-700"
           >
             {t('form_oauth_github')}
