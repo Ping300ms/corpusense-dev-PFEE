@@ -11,23 +11,27 @@ const RegisterPage = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg(null);
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    if (password !== confirmPassword) {
+      setErrorMsg(t('error_password_mismatch') || 'Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+
+    const { error } = await supabase.auth.signUp({ email, password });
 
     if (error) {
       setErrorMsg(error.message);
     } else {
-      navigate('/collections'); // ou page de confirmation email
+      await navigate('/collections'); // ou page de confirmation email
     }
 
     setLoading(false);
@@ -36,7 +40,7 @@ const RegisterPage = () => {
   return (
     <div className="flex items-center justify-center min-h-screen px-4">
       <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-md w-full max-w-md text-left">
-        <form onSubmit={handleRegister} className="space-y-5">
+        <form onSubmit={(e) => void handleRegister(e)} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
               {t('form_label_email')}
@@ -61,7 +65,19 @@ const RegisterPage = () => {
               placeholder="••••••••"
             />
           </div>
-          {errorMsg && <div className="text-red-600 text-sm">{errorMsg}</div>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+              {t('form_label_confirm_password') || 'Confirm Password'}
+            </label>
+            <Input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+            />
+          </div>
+          {(errorMsg != null) && <div className="text-red-600 text-sm">{errorMsg}</div>}
           <Button type="submit" className="w-full" disabled={loading} title={t('btn_register')}>
             {loading ? t('loading') : t('btn_register')}
           </Button>

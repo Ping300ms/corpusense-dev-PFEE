@@ -11,7 +11,7 @@ const ProfilePage = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/'); // ou '/login' selon ta logique
+    await navigate('/'); // ou '/login' selon ta logique
   };
 
   return (
@@ -23,7 +23,7 @@ const ProfilePage = () => {
       </div>
 
       <Button
-        onClick={handleLogout}
+        onClick={() => void handleLogout()}
         className="bg-red-500 hover:bg-red-600 text-white text-sm w-fit"
         title={t('btn_logout')}
         variant="ghost"
