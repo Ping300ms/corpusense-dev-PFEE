@@ -4,21 +4,18 @@ export const CorpusenseRoutes = {
   MANIFEST: 'manifest',
   COLLECTIONS: 'collections',
   CONFIGURATION: 'configuration',
-  LOGIN: 'login',
-  PROFILE: 'profile',
-  REGISTER: 'register'
+  MODELS: 'models',
+  STORAGE: 'storage',
 };
 
 const useAppNavigation = () => {
   const navigate = useNavigate();
 
-  const goToManifestExplorer = async (manifestId?: string, forceV3?: boolean) => {
+  const goToManifestExplorer = async (manifestId?: string) => {
     if (manifestId === undefined) {
       await navigate(`${CorpusenseRoutes.MANIFEST}`);
     } else {
-      await navigate(
-        `${CorpusenseRoutes.MANIFEST}?manifestId=${manifestId}${forceV3 !== undefined ? '&forceV3=' + forceV3 : ''}`,
-      );
+      await navigate(`${CorpusenseRoutes.MANIFEST}?manifestId=${manifestId}`);
     }
   };
   const goToCollectionsManager = async () => {
@@ -30,12 +27,20 @@ const useAppNavigation = () => {
   const goToConfiguration = async () => {
     await navigate(`/${CorpusenseRoutes.CONFIGURATION}`);
   };
+  const goToModelsManager = async () => {
+    await navigate(`/${CorpusenseRoutes.MODELS}`);
+  };
+  const goToStorage = async () => {
+    await navigate(`/${CorpusenseRoutes.STORAGE}`);
+  };
 
   return {
     goToManifestExplorer,
     goToCollectionsManager,
     goToCollectionInspector,
     goToConfiguration,
+    goToModelsManager,
+    goToStorage,
   };
 };
 

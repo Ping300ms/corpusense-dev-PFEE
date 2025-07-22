@@ -1,3 +1,4 @@
+import { Event, EventType } from '@/data/models/Event';
 import { History } from '@/data/models/History';
 import { ItemMetadataAttribute } from '@/data/models/Metadata';
 import { Manifest } from '@iiif/presentation-3';
@@ -5,39 +6,34 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface ManifestState {
   isLoading: boolean;
-  lastError: string | null;
   loadedData: {
     content: Manifest;
     metadata: ItemMetadataAttribute[];
   } | null;
   isLoaded: boolean;
   history: History[];
+  manifestOpenEvent: Event | undefined; // Optional event to track when the manifest is opened
 }
 
-const initialState: ManifestState = {
+export const manifestInitialState: ManifestState = {
   isLoading: false,
-  lastError: '',
   loadedData: null,
   history: [],
   isLoaded: false,
+  manifestOpenEvent: undefined, // Initialize the manifestOpenEvent to false
 };
 
 const loadingState: Omit<ManifestState, 'history'> = {
   isLoading: true,
-  lastError: '',
   loadedData: null,
   isLoaded: false,
+  manifestOpenEvent: undefined, // Reset the manifestOpenEvent when loading
 };
 
 const applyLoadingState = (state: ManifestState): ManifestState => ({
   ...loadingState,
   history: state.history,
 });
-
-export interface FetchManifestPayload {
-  manifestId: string;
-  forceV3?: boolean;
-}
 
 export interface SaveMetadataPayload {
   manifestId: string;
@@ -46,17 +42,15 @@ export interface SaveMetadataPayload {
 
 export const manifestsSlice = createSlice({
   name: 'manifests',
-  initialState,
+  initialState: manifestInitialState,
   reducers: {
-    fetchManifestFromUrlRequest: (state, _action: PayloadAction<FetchManifestPayload>) =>
-      applyLoadingState(state),
-    fetchManifestFromContentRequest: (state, _action: PayloadAction<string>) =>
-      applyLoadingState(state),
-    fetchManifestFromArkRequest: (state, _action: PayloadAction<string>) =>
-      applyLoadingState(state),
+    fecthManifestRequest: (state, _action: PayloadAction<string>) => applyLoadingState(state),
     fetchManifestError: (state, action: PayloadAction<string>) => {
       state.isLoading = false;
-      state.lastError = action.payload;
+      state.manifestOpenEvent = {
+        message: action.payload || 'Error loading manifest',
+        type: EventType.ERROR,
+      }; // Set the manifestOpenEvent to an error when loading fails
     },
     fetchManifestSuccess: (
       state,
@@ -65,6 +59,7 @@ export const manifestsSlice = createSlice({
       state.isLoading = false;
       state.isLoaded = true;
       state.loadedData = action.payload;
+      state.manifestOpenEvent = { message: 'OK', type: EventType.INFO }; // Set the manifestOpenEvent when a manifest is successfully loaded
     },
     updateHistorySuccess: (state, action: PayloadAction<History>) => {
       //add the manifest id to the history and remove the duplicates
@@ -83,16 +78,14 @@ export const manifestsSlice = createSlice({
       if (state.loadedData === null) return;
       state.loadedData.metadata = action.payload.metadata;
     },
-    resetLastError: (state) => {
-      state.lastError = '';
+    resetManifestOpenEvent: (state) => {
+      state.manifestOpenEvent = undefined; // Reset the manifestOpenEvent
     },
   },
 });
 
 export const {
-  fetchManifestFromUrlRequest,
-  fetchManifestFromContentRequest,
-  fetchManifestFromArkRequest,
+  fecthManifestRequest,
   fetchManifestError,
   fetchManifestSuccess,
   setHistory,
@@ -101,6 +94,6 @@ export const {
   updateHistorySuccess,
   saveMetadataRequest,
   saveMetadataSuccess,
-  resetLastError,
+  resetManifestOpenEvent,
 } = manifestsSlice.actions;
 export default manifestsSlice.reducer;

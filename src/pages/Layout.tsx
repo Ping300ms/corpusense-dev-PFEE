@@ -1,5 +1,8 @@
-import HistoryNav from '@/components/HistoryNav';
-import ManifestExplorerDrawer from '@/components/ManifestExplorerDrawer';
+import AlertDialogLogin from '@/components/auth/AlertDialogLogin';
+import ContactDrawer from '@/components/drawers/ContactDrawer';
+import HistoryDrawer from '@/components/drawers/HistoryDrawer';
+import ManifestExplorerDrawer from '@/components/drawers/ManifestExplorerDrawer';
+import WorkerDrawer from '@/components/drawers/WorkerDrawer';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   DropdownMenu,
@@ -8,23 +11,28 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Toaster } from '@/components/ui/sonner';
+import WorkerLabel from '@/components/WorkerLabel';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import useAppNavigation, { CorpusenseRoutes } from '@/hooks/useAppNavigation';
-import { resetErrror, resetEvent } from '@/state/reducers/annotations';
-import { removeFromOpenedCollections, resetLastError } from '@/state/reducers/collections';
-import { resetAlert } from '@/state/reducers/export';
-import { resetLastWorkerError } from '@/state/reducers/workers';
+import { logoutRequest } from '@/state/reducers/auth';
+import { removeFromOpenedCollections } from '@/state/reducers/collections';
+import { resetLastEvent } from '@/state/reducers/events';
+import { connectedUser } from '@/state/selectors/auth';
 import { getOpenedCollections } from '@/state/selectors/collections';
+import { getLastErrorEvent, getLastInfoEvent } from '@/state/selectors/events';
 import {
+  Archive,
   Bolt,
   ChevronDown,
+  Container,
   CornerDownRight,
   FolderSearch2,
-  List, LogOut,
+  List,
   MoreHorizontal,
-  ScrollText, User,
+  ScrollText,
+  User2,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -46,208 +54,257 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '../components/ui/sidebar';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/supabaseClient';
-import { useNavigate } from 'react-router-dom';
 
-const LayoutSideBar = () => {
+const WorkersSideBarGroup = ({
+  setSelectedWorkerId,
+}: {
+  setSelectedWorkerId: (id: string) => void;
+}) => {
   const { t } = useTranslation();
+  const workers = useAppSelector(
+    (state) => state.workers.workers,
+    // getWorkersByStatus(state, [
+    //   WorkerStatus.INPROGRESS,
+    //   WorkerStatus.INPROGRESS_WITH_ERRORS,
+    //   WorkerStatus.UNFINISHED,
+    //   WorkerStatus.UNFINISHED_WITH_ERRORS,
+    // ]),
+  );
+  if (workers.length === 0) {
+    return null;
+  }
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{t('nav_workers')}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {workers.map((worker) => (
+            <SidebarMenuItem
+              key={worker.id}
+              className='cursor-pointer overflow-hidden'
+              onClick={() => setSelectedWorkerId(worker.id)}
+            >
+              <SidebarMenuButton asChild>
+                <WorkerLabel worker={worker} />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+};
+
+const LayoutSideBar = ({ setSelectedWorkerId }: { setSelectedWorkerId: (id: string) => void }) => {
+  const { t } = useTranslation();
+  const user = useAppSelector(connectedUser);
   const openedCollections = useAppSelector(getOpenedCollections);
+
   const navigation = useAppNavigation();
   const dispatch = useAppDispatch();
-
-  const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    await navigate(CorpusenseRoutes.PROFILE);
-  };
-
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleOnClose = async (collectionId: string) => {
     await navigation.goToManifestExplorer();
     dispatch(removeFromOpenedCollections(collectionId));
   };
 
-  return (
-    <Sidebar>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>{t('nav_application')}</SidebarGroupLabel>
-          <SidebarMenu>
-            {[
-              {
-                title: t('page_title_manifexplorer'),
-                url: CorpusenseRoutes.MANIFEST,
-                icon: FolderSearch2,
-              },
-              {
-                title: t('page_title_collection_manager'),
-                url: CorpusenseRoutes.COLLECTIONS,
-                icon: List,
-              },
-              {
-                title: t('page_title_user'),
-                url: CorpusenseRoutes.PROFILE,
-                icon: User,
-              },
-            ].map((item) => (
-              <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild>
-                  <Link to={item.url}>
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-        ))}
+  const handleLogout = () => {
+    dispatch(logoutRequest());
+  };
 
-          </SidebarMenu>
-        </SidebarGroup>
-        {openedCollections.length > 0 && (
-          <SidebarGroup id='collections'>
+  return (
+    <>
+      <Sidebar>
+        <SidebarContent>
+          <SidebarGroup>
             <SidebarMenu>
-              <Collapsible defaultOpen className='group'>
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
+              <SidebarMenuItem>
+                {/* modal={false} : fix a bug with the Dialog+ContextMenu : https://github.com/radix-ui/primitives/issues/1836 */}
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
                     <SidebarMenuButton>
-                      <ScrollText />
-                      {t('nav_collections')}
-                      <ChevronDown className='transition-transform duration-200 group-data-[state=closed]:-rotate-90' />
+                      <div className='flex items-center gap-2'>
+                        <User2 />
+                        {user ? user.email : t('info_not_connected')}
+                        <ChevronDown className='ml-auto' />
+                      </div>
                     </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {openedCollections.map(
-                        (col) =>
-                          col.id !== undefined && (
-                            <SidebarMenuSubItem key={col.id}>
-                              <SidebarMenuSubButton className='h-auto' asChild>
-                                <div>
-                                  <CornerDownRight />
-                                  <Link
-                                    to={`/${CorpusenseRoutes.COLLECTIONS}/${col.id}`}
-                                    className='h-full w-full'
-                                    title={col.name}
-                                  >
-                                    {col.name}
-                                  </Link>
-                                </div>
-                              </SidebarMenuSubButton>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <SidebarMenuAction title={t('btn_more_actions')}>
-                                    <MoreHorizontal />
-                                  </SidebarMenuAction>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent side='right' align='start'>
-                                  <DropdownMenuItem
-                                    onClick={() => void handleOnClose(col.id as string)}
-                                  >
-                                    {t('btn_close_collection')}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </SidebarMenuSubItem>
-                          ),
-                      )}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side='right'>
+                    {user ? (
+                      <DropdownMenuItem onClick={() => handleLogout()}>
+                        Se déconnecter
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={() => setIsOpen(true)}>
+                        Se connecter
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
-        )}
-        <SidebarGroup id='history'>
-          <SidebarGroupLabel>{t('nav_history')}</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <HistoryNav />
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('nav_application')}</SidebarGroupLabel>
+            <SidebarMenu>
+              {[
+                {
+                  title: t('page_title_manifexplorer'),
+                  url: CorpusenseRoutes.MANIFEST,
+                  icon: FolderSearch2,
+                },
+                {
+                  title: t('page_title_collection_manager'),
+                  url: CorpusenseRoutes.COLLECTIONS,
+                  icon: List,
+                },
+                {
+                  title: t('page_title_models_manager'),
+                  url: CorpusenseRoutes.MODELS,
+                  icon: Container,
+                },
+                {
+                  title: t('page_title_storage'),
+                  url: CorpusenseRoutes.STORAGE,
+                  icon: Archive,
+                },
+              ].map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <Link to={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+          {openedCollections.length > 0 && (
+            <SidebarGroup id='collections'>
+              <SidebarMenu>
+                <Collapsible defaultOpen className='group'>
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton>
+                        <ScrollText />
+                        {t('nav_collections')}
+                        <ChevronDown className='transition-transform duration-200 group-data-[state=closed]:-rotate-90' />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {openedCollections.map(
+                          (col) =>
+                            col.id !== undefined && (
+                              <SidebarMenuSubItem key={col.id}>
+                                <SidebarMenuSubButton className='h-auto' asChild>
+                                  <div>
+                                    <CornerDownRight />
+                                    <Link
+                                      to={`/${CorpusenseRoutes.COLLECTIONS}/${col.id}`}
+                                      className='h-full w-full'
+                                      title={col.name}
+                                    >
+                                      {col.name}
+                                    </Link>
+                                  </div>
+                                </SidebarMenuSubButton>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <SidebarMenuAction title={t('btn_more_actions')}>
+                                      <MoreHorizontal />
+                                    </SidebarMenuAction>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent side='right' align='start'>
+                                    <DropdownMenuItem
+                                      onClick={() => void handleOnClose(col.id as string)}
+                                    >
+                                      {t('btn_close_collection')}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </SidebarMenuSubItem>
+                            ),
+                        )}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroup>
+          )}
+          <WorkersSideBarGroup setSelectedWorkerId={setSelectedWorkerId} />
+        </SidebarContent>
 
-      <SidebarFooter>
-        {user && (
-          <SidebarMenuButton
-            onClick={() => void handleLogout()}
-            className='text-red-500 hover:bg-red-50 justify-start'
-          >
-            <LogOut className='mr-2' />
-            <span>{t('btn_logout')}</span>
-          </SidebarMenuButton>
-        )}
-        <div className='flex justify-between'>
-          Corpusense v{import.meta.env.VITE_APP_VERSION}
-          <Link to={CorpusenseRoutes.CONFIGURATION} title={t('page_title_configuration')}>
-            <Bolt />
-          </Link>
-        </div>
-      </SidebarFooter>
-    </Sidebar>
+        <SidebarFooter>
+          <div className='flex justify-between'>
+            Corpusense v{import.meta.env.VITE_APP_VERSION}
+            <Link to={CorpusenseRoutes.CONFIGURATION} title={t('page_title_configuration')}>
+              <Bolt />
+            </Link>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+      <AlertDialogLogin isOpen={isOpen} setIsOpen={setIsOpen} />
+    </>
   );
 };
 
 const Layout = () => {
-  const { newCollectionEvent } = useAppSelector((state) => state.collections);
-  const { error, lastEvent } = useAppSelector((state) => state.workers.global);
-  const { lastExportError, lastExportStatus } = useAppSelector((state) => state.export);
-  const lastAnnotationError = useAppSelector((state) => state.annotations.error);
-  const lastAnnotationEvent = useAppSelector((state) => state.annotations.event);
+  const lastInfo = useAppSelector(getLastInfoEvent);
+  const lastError = useAppSelector(getLastErrorEvent);
   const dispatch = useAppDispatch();
-  const { t } = useTranslation();
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
+  const [isOpen, setIsOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    if (newCollectionEvent) {
-      toast.success(t('toast_collection_created'));
-      dispatch(resetLastError());
+    if (lastInfo !== undefined) {
+      toast.success(lastInfo.message);
+      dispatch(resetLastEvent());
     }
-  }, [newCollectionEvent]);
+  }, [lastInfo]);
 
   useEffect(() => {
-    if (error && error !== '') {
-      toast.error(`${t('toast_error')} : ${error}`);
-      dispatch(resetLastWorkerError());
+    if (lastError !== undefined) {
+      toast.error(lastError.message);
+      dispatch(resetLastEvent());
     }
-  }, [error]);
+  }, [lastError]);
 
   useEffect(() => {
-    if (lastEvent && lastEvent !== '') {
-      toast.info(lastEvent);
-      dispatch(resetLastWorkerError());
+    if (selectedWorkerId !== '') {
+      setIsOpen(true);
     }
-  }, [lastEvent]);
+  }, [selectedWorkerId]);
 
+  // Reset selected worker when drawer closes (if not, the drawer will not reopen)
   useEffect(() => {
-    if (lastAnnotationError !== undefined && lastAnnotationError !== '') {
-      toast.error(lastAnnotationError);
-      dispatch(resetErrror());
+    if (!isOpen) {
+      setSelectedWorkerId('');
     }
-  }, [lastAnnotationError]);
-
-  useEffect(() => {
-    if (lastAnnotationEvent !== undefined && lastAnnotationEvent !== '') {
-      toast.info(lastAnnotationEvent);
-      dispatch(resetEvent());
-    }
-  }, [lastAnnotationEvent]);
-
-  useEffect(() => {
-    if (lastExportStatus === 'ERROR' && lastExportError !== '') {
-      toast.error(t(lastExportError));
-      dispatch(resetAlert());
-    }
-  }, [lastExportStatus]);
+  }, [isOpen]);
 
   return (
     <SidebarProvider className='h-full w-full'>
-      <LayoutSideBar />
+      <LayoutSideBar setSelectedWorkerId={setSelectedWorkerId} />
       <SidebarInset className='m-2'>
         {/*TODO: Fix this width : pour une raison inconnue w-100 empêche la fenêtre de déborder*/}
         <header className='flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12'>
-          <div className='flex items-center'>
+          <div className='flex items-center space-x-2'>
             <SidebarTrigger />
             <ManifestExplorerDrawer />
+            <HistoryDrawer />
+            <WorkerDrawer
+              selectedWorkerId={selectedWorkerId}
+              setSelectedWorkerId={setSelectedWorkerId}
+              isOpen={isOpen}
+              setIsOpen={setIsOpen}
+            />
+            <ContactDrawer />
           </div>
         </header>
         <Outlet />

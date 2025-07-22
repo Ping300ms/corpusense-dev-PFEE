@@ -1,9 +1,7 @@
 import i18next from 'i18next';
-import { DataModel } from '../models/DataModel';
+import { DataField, DataModel } from '../models/DataModel';
 
 const generatePreview = (model: DataModel) => {
-  console.log(`Model preview: `, model);
-
   let preview = '{';
   for (let i = 0; i < model.fields.length; i++) {
     const field = model.fields[i];
@@ -22,17 +20,27 @@ const generatePreview = (model: DataModel) => {
 };
 
 const generateSchema = (model: DataModel) => {
+  const modelWithConfidfidence = {
+    ...model,
+    fields: [
+      ...model.fields,
+      {
+        id: 'confiance',
+        name: 'confiance',
+        type: 'number',
+        description:
+          '(valeur comprise entre 0 et 1, 0 pour confiance minimale et 1 pour la confiance maximale). Si un élément ne te semble pas pertient, garde-le et donne-lui un indice de confiance de 0. ',
+        generated: true,
+        color: '#000000',
+      },
+    ],
+  };
   const schema = {
     type: 'object',
     properties: {
-      ...model.fields.reduce(
+      ...modelWithConfidfidence.fields.reduce(
         (acc, field) => {
-          acc[field.name] = {
-            type: field.type,
-            description: (field.description ?? '').concat(
-              field?.generated === true ? i18next.t('ia_generated') : '',
-            ),
-          };
+          acc[field.name] = generateField(field);
           return acc;
         },
         {} as Record<string, { type: string; description: string }>,
@@ -40,6 +48,27 @@ const generateSchema = (model: DataModel) => {
     },
   };
   return JSON.stringify(schema, null, 2);
+};
+
+const generateField = (field: DataField) => {
+  if (field.isArray === true) {
+    return {
+      type: 'array',
+      description: (field.description ?? '').concat(
+        field?.generated === true ? i18next.t('ia_generated') : '',
+      ),
+      items: {
+        type: field.type,
+      },
+    };
+  } else {
+    return {
+      type: field.type,
+      description: (field.description ?? '').concat(
+        field.generated === true ? i18next.t('ia_generated') : '',
+      ),
+    };
+  }
 };
 
 export { generatePreview, generateSchema };

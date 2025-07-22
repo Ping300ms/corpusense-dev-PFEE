@@ -1,5 +1,6 @@
 import { ElementType } from '@/data/models/Annotation';
 import { DataModel } from '@/data/models/DataModel';
+import { Worker } from '@/data/models/Worker';
 import { useAppDispatch } from '@/hooks/hooks';
 import {
   duplicateAnnotationsEach2PagesRequest,
@@ -7,11 +8,7 @@ import {
   removeAllCanvasAnnotationsRequest,
 } from '@/state/reducers/annotations';
 import { exportTextOfCanvasRequest } from '@/state/reducers/export';
-import {
-  fetchDataAnalysisRequest,
-  fetchLayoutRequest,
-  fetchOcrRequest,
-} from '@/state/reducers/workers';
+import { exportWorkerResultRequest, startWorkerProcess } from '@/state/reducers/workers';
 import { getAnnotationsByType } from '@/state/selectors/annotations';
 import { RootState } from '@/state/store';
 import { Move, SquarePen } from 'lucide-react';
@@ -44,25 +41,32 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
       ),
     );
 
-    const handleStartLayoutAnalysis = () => {
-      if (
-        cvcState?.image?.id !== undefined &&
-        cvcState?.canvas !== undefined &&
-        props.collectionId !== undefined
-      ) {
-        appDispatch(
-          fetchLayoutRequest({
-            canvas: cvcState.canvas,
-            collectionId: props.collectionId,
-            originalWidth: cvcState.image.width ?? 0,
-          }),
-        );
-      }
-    };
+    // const handleStartLayoutAnalysis = () => {
+    //   if (
+    //     cvcState?.image?.id !== undefined &&
+    //     cvcState?.canvas !== undefined &&
+    //     props.collectionId !== undefined
+    //   ) {
+    //     appDispatch(
+    //       fetchLayoutRequest({
+    //         canvas: cvcState.canvas,
+    //         collectionId: props.collectionId,
+    //         originalWidth: cvcState.image.width ?? 0,
+    //       }),
+    //     );
+    //   }
+    // };
 
     const handleStartOcrAnalysis = () => {
       if (cvcState?.image?.id !== undefined && props.collectionId !== undefined) {
-        appDispatch(fetchOcrRequest({ canvas: props.canvas, collectionId: props.collectionId }));
+        // appDispatch(fetchOcrRequest({ canvas: props.canvas, collectionId: props.collectionId }));
+        appDispatch(
+          startWorkerProcess({
+            workerName: 'peroocr',
+            params: {},
+            scope: { canvasId: props.canvas.id, collectionId: props.collectionId },
+          }),
+        );
       }
     };
 
@@ -79,6 +83,10 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
 
     const handleExtractData = () => {
       setDialogOpen(true);
+    };
+
+    const handleExportResult = (worker: Worker) => {
+      appDispatch(exportWorkerResultRequest({ worker }));
     };
 
     const handleDeleteAllAnnotations = () => {
@@ -119,10 +127,13 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
 
       if (props.collectionId !== undefined) {
         appDispatch(
-          fetchDataAnalysisRequest({
-            canvasId: props.canvas.id,
-            collectionId: props.collectionId,
-            model,
+          startWorkerProcess({
+            workerName: 'mistral',
+            params: {
+              model,
+              workerName: 'mistral',
+            },
+            scope: { canvasId: props.canvas.id, collectionId: props.collectionId },
           }),
         );
       }
@@ -136,8 +147,9 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
             handleOcr={handleStartOcrAnalysis}
             handleExportText={handleExportText}
             handleDeleteAllAnnotations={handleDeleteAllAnnotations}
-            handleLayout={handleStartLayoutAnalysis}
+            // handleLayout={handleStartLayoutAnalysis}
             handleExtractData={handleExtractData}
+            handleExportResult={handleExportResult}
             scope={{ canvasId: cvcState.canvas?.id ?? '', collectionId: props.collectionId ?? '' }}
           />
 

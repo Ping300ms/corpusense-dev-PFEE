@@ -8,8 +8,7 @@ import {
 import { exportTextOfCollectionRequest } from '@/state/reducers/export';
 import {
   exportWorkerResultRequest,
-  fetchBatchLayoutRequest,
-  fetchBatchOcrRequest,
+  recoverWorkerRequest,
   startWorkerProcess,
 } from '@/state/reducers/workers';
 import { useState } from 'react';
@@ -24,12 +23,19 @@ const CollectionToolbar = ({ collectionId }: { collectionId: string }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const handleOcr = () => {
-    appDispatch(fetchBatchOcrRequest(collectionId));
+    // appDispatch(fetchBatchOcrRequest(collectionId));
+    appDispatch(
+      startWorkerProcess({
+        workerName: 'peroocr',
+        params: {},
+        scope: { collectionId },
+      }),
+    );
   };
 
-  const handleLayout = () => {
-    appDispatch(fetchBatchLayoutRequest(collectionId));
-  };
+  // const handleLayout = () => {
+  //   appDispatch(fetchBatchLayoutRequest(collectionId));
+  // };
 
   const handleDeleteAllAnnotations = () => {
     appDispatch(removeAllCollectionAnnotationsRequest(collectionId));
@@ -48,7 +54,11 @@ const CollectionToolbar = ({ collectionId }: { collectionId: string }) => {
   };
 
   const handleExportResult = (worker: Worker) => {
-    appDispatch(exportWorkerResultRequest(worker));
+    appDispatch(exportWorkerResultRequest({ worker }));
+  };
+
+  const handleRecoverWorker = (worker: Worker) => {
+    appDispatch(recoverWorkerRequest(worker));
   };
 
   const close = (model: DataModel) => {
@@ -59,9 +69,10 @@ const CollectionToolbar = ({ collectionId }: { collectionId: string }) => {
         startWorkerProcess({
           workerName: 'mistral',
           params: {
-            scope: { collectionId },
             model,
+            workerName: 'mistral',
           },
+          scope: { collectionId },
         }),
       );
     }
@@ -71,13 +82,14 @@ const CollectionToolbar = ({ collectionId }: { collectionId: string }) => {
     <div className='panel'>
       <Toolbar
         title={t('title_collection_actions')}
-        handleLayout={handleLayout}
+        // handleLayout={handleLayout}
         handleOcr={handleOcr}
         handleDeleteAllAnnotations={handleDeleteAllAnnotations}
         handleExportText={handleExportText}
         handleExtractData={handleExtractData}
         handleRecomputeRegions={handleRecomputeRegions}
         handleExportResult={handleExportResult}
+        handleRecoverWorker={handleRecoverWorker}
         scope={{ collectionId }}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

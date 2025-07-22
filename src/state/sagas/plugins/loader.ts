@@ -1,12 +1,13 @@
 import { Result } from '@/data/models/Result';
+import { Task } from '@/data/models/Worker';
 
 export type WorkerPlugin = { run: WorkerRunFunction; export?: WorkerExportFunction };
-export type WorkerRunFunction = (params?: Record<string, unknown>) => Generator;
+export type WorkerRunFunction = (task: Task, params?: Record<string, unknown>) => Generator;
 export type WorkerExportFunction = (results: Result[]) => Generator;
 type WorkerModule = {
   default: WorkerRunFunction;
   pluginName: string;
-  exportResult?: (results: Result[]) => Generator;
+  exportResult?: WorkerExportFunction;
 };
 
 export type ImporterPlugin = { import: ImportFunction };

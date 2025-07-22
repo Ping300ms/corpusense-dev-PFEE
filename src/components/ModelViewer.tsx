@@ -1,48 +1,67 @@
 import { DataField } from '@/data/models/DataModel';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import { saveModelRequest } from '@/state/reducers/models';
-import { getActiveModel } from '@/state/selectors/models';
-import { CirclePlus, CircleX, Eye, Save } from 'lucide-react';
+import { getModelById } from '@/state/selectors/models';
+import { CircleArrowDown, CircleArrowUp, CirclePlus, CircleX, Eye, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { analogue } from 'simpler-color';
 import { v4 as uuid } from 'uuid';
-import AlertDialogForm from '../AlertDialogForm';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
-import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
-import { ColorPicker } from './ColorPicker';
-import ModelPreview from './ModelPreview';
+import AlertDialogForm from './AlertDialogForm';
+import { ColorPicker } from './textviewer/ColorPicker';
+import ModelPreview from './textviewer/ModelPreview';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { Checkbox } from './ui/checkbox';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Textarea } from './ui/textarea';
 const baseColor = '#a4d6f6';
 
-const ModelViewer = () => {
+const ModelViewer = ({ modelId }: { modelId: string }) => {
   const { t } = useTranslation();
   const appDispatch = useAppDispatch();
-  const model = useAppSelector(getActiveModel);
+  const model = useAppSelector((state) => getModelById(state, modelId));
   const [fields, setFields] = useState(model?.fields ?? []);
+  const [description, setDescription] = useState('');
+  const [prompt, setPrompt] = useState('');
+
+  const options = [
+    { value: 'string', label: 'Texte' },
+    { value: 'number', label: 'Nombre' },
+  ];
 
   useEffect(() => {
-    if (model) {
+    if (model !== undefined) {
       setFields(model.fields);
+      setDescription(model.description ?? '');
+      setPrompt(model.prompt ?? '');
     }
   }, [model]);
 
-  if (model === null) {
+  if (model === undefined) {
     return <div className='panel text-red-500'>{t('error_model_undefined')}</div>;
   }
 
   const handleAddField = () => {
     const nextColor =
       fields.length === 0 ? baseColor : analogue(fields[fields.length - 1].color, 2);
-    setFields([...fields, { id: uuid(), name: '', type: '', description: '', color: nextColor }]);
+    setFields([
+      ...fields,
+      { id: uuid(), name: '', type: options[0].value, description: '', color: nextColor },
+    ]);
   };
 
   const handleSave = () => {
     const newFields = fields.filter((f) => f.name !== '' && f.type !== '');
     setFields(newFields);
-    const updatedModel = { ...model, fields: newFields };
+    const updatedModel = {
+      ...model,
+      fields: newFields,
+      description: description.trim(),
+      prompt: prompt.trim(),
+    };
     appDispatch(saveModelRequest(updatedModel));
   };
 
@@ -50,6 +69,24 @@ const ModelViewer = () => {
     setFields((prev) => {
       const updatedFields = [...prev];
       updatedFields[index] = { ...updatedFields[index], ...newValue };
+      return updatedFields;
+    });
+  };
+
+  const handleSwapFields = (index: number, direction: 'up' | 'down') => {
+    setFields((prev) => {
+      const updatedFields = [...prev];
+      if (direction === 'up' && index > 0) {
+        [updatedFields[index - 1], updatedFields[index]] = [
+          updatedFields[index],
+          updatedFields[index - 1],
+        ];
+      } else if (direction === 'down' && index < updatedFields.length - 1) {
+        [updatedFields[index + 1], updatedFields[index]] = [
+          updatedFields[index],
+          updatedFields[index + 1],
+        ];
+      }
       return updatedFields;
     });
   };
@@ -75,6 +112,24 @@ const ModelViewer = () => {
           {({ close }) => <ModelPreview close={close} model={model} />}
         </AlertDialogForm>
       </div>
+      <div className='m-2 flex w-full items-center justify-center'>
+        <Label htmlFor='description'>{t('form_label_model_description')}</Label>
+        <Textarea
+          id='description'
+          className='ml-2 max-w-3/4 min-w-1/2'
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+      <div className='m-2 flex w-full items-center justify-center'>
+        <Label htmlFor='prompt'>{t('form_label_model_prompt')}</Label>
+        <Textarea
+          id='prompt'
+          className='ml-2 max-w-3/4 min-w-1/2'
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+      </div>
       {fields.length > 0 ? (
         <Accordion asChild type='single' collapsible className='w-full' defaultValue='datafields'>
           <AccordionItem value='datafields'>
@@ -85,6 +140,7 @@ const ModelViewer = () => {
                   <TableRow>
                     <TableHead>{t('table_col_title_name')}</TableHead>
                     <TableHead>{t('table_col_title_type')}</TableHead>
+                    <TableHead>{t('table_col_title_isArray')}</TableHead>
                     <TableHead>{t('table_col_title_description')}</TableHead>
                     <TableHead>{t('table_col_title_ia')}</TableHead>
                     <TableHead>{t('table_col_title_color')}</TableHead>
@@ -111,13 +167,24 @@ const ModelViewer = () => {
                             <SelectValue placeholder={'Type de données'} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value='string'>Texte</SelectItem>
-                            <SelectItem value='number'>Nombre</SelectItem>
+                            {options.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Input
+                        <Checkbox
+                          checked={field.isArray ?? false}
+                          onCheckedChange={(checked) =>
+                            updateFields(index, { isArray: Boolean(checked) })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Textarea
                           value={field.description}
                           placeholder={t('form_label_datafield_description')}
                           onChange={(e) => updateFields(index, { description: e.target.value })}
@@ -137,14 +204,34 @@ const ModelViewer = () => {
                           onChange={(v) => updateFields(index, { color: v })}
                         />
                       </TableCell>
-                      <TableCell className='flex justify-center space-x-2'>
-                        <button
-                          title={t('btn_delete_datafield')}
-                          className='cursor-pointer'
-                          onClick={() => setFields((prev) => prev.filter((_, i) => i !== index))}
-                        >
-                          <CircleX />
-                        </button>
+                      <TableCell>
+                        <div className='flex space-x-1'>
+                          {index > 0 && (
+                            <button
+                              className='cursor-pointer'
+                              title={t('btn_moveup_datafield')}
+                              onClick={() => handleSwapFields(index, 'up')}
+                            >
+                              <CircleArrowUp />
+                            </button>
+                          )}
+                          {index < fields.length - 1 && (
+                            <button
+                              className='cursor-pointer'
+                              title={t('btn_movedown_datafield')}
+                              onClick={() => handleSwapFields(index, 'down')}
+                            >
+                              <CircleArrowDown />
+                            </button>
+                          )}
+                          <button
+                            title={t('btn_delete_datafield')}
+                            className='cursor-pointer'
+                            onClick={() => setFields((prev) => prev.filter((_, i) => i !== index))}
+                          >
+                            <CircleX />
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

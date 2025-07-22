@@ -17,7 +17,7 @@ import { Collection } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import useAppNavigation from '@/hooks/useAppNavigation';
 import { removeCollectionRequest } from '@/state/reducers/collections';
-import { exportMultipleCollectionsRequest, resetAlert } from '@/state/reducers/export';
+import { exportMultipleCollectionsRequest } from '@/state/reducers/export';
 import { getCollections } from '@/state/selectors/collections';
 import { getTagsByIds } from '@/state/selectors/tags';
 import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
@@ -46,8 +46,6 @@ const CollectionTableRow = ({
       const blob = new Blob([lastExportContent as string], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       setDownloadLink(url);
-
-      dispatch(resetAlert());
     }
   }, [lastExportContent]);
 
@@ -90,6 +88,7 @@ const CollectionTableRow = ({
         />
       </TableCell>
       <TableCell>{collection.name}</TableCell>
+      <TableCell>{collection.id}</TableCell>
       <TableCell>
         {collection.content === undefined || collection.content.length === 0 ? (
           <Badge variant='secondary' className='text-sm'>
@@ -200,6 +199,7 @@ const CollectionsManagerPage = () => {
               <TableRow>
                 <TableHead></TableHead>
                 <TableHead>{t('table_col_title_collection_name')}</TableHead>
+                <TableHead>{t('table_col_title_collection_id')}</TableHead>
                 <TableHead>{t('table_col_title_collection_info')}</TableHead>
                 <TableHead>{t('table_col_title_tags')}</TableHead>
                 <TableHead>{t('table_col_title_actions')}</TableHead>

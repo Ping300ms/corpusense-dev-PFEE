@@ -1,9 +1,8 @@
-import { useAppSelector } from '@/hooks/hooks';
-import { getDatafieldById, hasActiveModel } from '@/state/selectors/models';
 import Konva from 'konva';
 import { useEffect, useRef, useState } from 'react';
-import { Label, Tag, Text } from 'react-konva';
+import { Group, Text } from 'react-konva';
 import { MARKUP_ACTIONS, useMarkupContext } from '../reducers/MarkupContext';
+import WordLabelBackground from './WordLabelBackground';
 
 type WordLabelProps = {
   word: string;
@@ -12,18 +11,14 @@ type WordLabelProps = {
 
 const WordLabel = ({ word, index }: WordLabelProps) => {
   const { state, dispatch } = useMarkupContext();
-  const labelRef = useRef<Konva.Label>(null);
+  const groupRef = useRef<Konva.Label>(null);
+  const textRef = useRef<Konva.Text>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const [isHovered, setIsHovered] = useState(false);
-  const hasModel = useAppSelector(hasActiveModel);
+  const hasModel = state.model !== undefined;
 
   const computedX = state.wordRects[index].rect.x;
   const computedY = state.wordRects[index].rect.y;
-  const isSelected = state.selected.includes(index);
-
-  const dataFieldId = state.wordRects[index].dataFieldId;
-  const dataField = useAppSelector((s) =>
-    dataFieldId !== undefined ? getDatafieldById(s, dataFieldId) : null,
-  );
 
   useEffect(() => {
     /*
@@ -35,10 +30,10 @@ const WordLabel = ({ word, index }: WordLabelProps) => {
     let raf: number;
     const timeout = window.setTimeout(() => {
       raf = requestAnimationFrame(() => {
-        if (labelRef.current) {
+        if (groupRef.current) {
           dispatch({
             type: MARKUP_ACTIONS.SET_RECT,
-            payload: { index, rect: labelRef.current.getClientRect() },
+            payload: { index, rect: groupRef.current.getClientRect() },
           });
         }
       });
@@ -49,6 +44,15 @@ const WordLabel = ({ word, index }: WordLabelProps) => {
       cancelAnimationFrame(raf);
     };
   }, []);
+
+  useEffect(() => {
+    if (textRef.current) {
+      setSize({
+        width: textRef.current.width(),
+        height: textRef.current.height(),
+      });
+    }
+  }, [textRef]);
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     //if the right button is clicked, do nothing
@@ -68,29 +72,27 @@ const WordLabel = ({ word, index }: WordLabelProps) => {
     setIsHovered(true);
   };
 
-  const tagColor = dataField !== null ? dataField.color : isSelected ? '#F2B263' : '';
-
   return (
-    <Label
+    <Group
       x={computedX}
       y={computedY}
-      ref={labelRef}
+      ref={groupRef}
       id={'' + index}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setIsHovered(false)}
       onMouseDown={handleMouseDown}
     >
-      <Tag fill={tagColor} />
+      <WordLabelBackground x={0} y={0} width={size.width} height={size.height} index={index} />
       <Text
+        ref={textRef}
         text={word}
         fontSize={20}
         fill='black'
-        // fill='white'
         padding={5}
         fontFamily='Calibri'
         textDecoration={isHovered ? 'underline' : ''}
       />
-    </Label>
+    </Group>
   );
 };
 

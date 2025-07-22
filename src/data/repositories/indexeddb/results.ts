@@ -1,10 +1,20 @@
 import { Result, ResultCreateDTO } from '@/data/models/Result';
+import { Scope } from '@/data/models/Scope';
 import { db } from './db';
 import { ResultRepository } from './types';
+import { getScopeKey } from './utils';
 
 export class IndexedDBResultRepository implements ResultRepository {
   async addResult(result: ResultCreateDTO): Promise<void> {
-    await db.results.add(result);
+    const newResult = {
+      ...result,
+      scopeKey: getScopeKey(result.scope),
+    };
+    await db.results.add(newResult);
+  }
+
+  async patch(id: number, changes: Partial<Result>): Promise<void> {
+    await db.results.update(id, changes);
   }
 
   async selectAll(): Promise<Result[]> {
@@ -12,6 +22,22 @@ export class IndexedDBResultRepository implements ResultRepository {
   }
 
   async selectByWorkerName(workerName: string): Promise<Result[]> {
-    return await db.results.where('workerName').equals(workerName).sortBy('id');
+    // Note: Using sortBy('taskId') to ensure results are returned in the order of their taskId
+    return await db.results.where('workerName').equals(workerName).sortBy('taskId');
+  }
+
+  async selectByWorkerId(workerId: string): Promise<Result[]> {
+    // Note: Using sortBy('taskId') to ensure results are returned in the order of their taskId
+    return await db.results.where('workerId').equals(workerId).sortBy('taskId');
+  }
+
+  async selectByScopeAndWorkerName(scope: Scope, workerName: string): Promise<Result> {
+    const result = await db.results
+      .where({ scopeKey: getScopeKey(scope), workerName: workerName })
+      .first();
+    if (result === undefined) {
+      throw new Error(`No result found`);
+    }
+    return result;
   }
 }

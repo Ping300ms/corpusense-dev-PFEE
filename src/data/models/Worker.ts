@@ -1,44 +1,53 @@
+import { PluginParams } from '@/state/reducers/workers';
+import { Scope } from './Scope';
+
 export enum WorkerStatus {
-  WAITING = 'waiting',
-  INPROGRESS = 'inprogress',
-  COMPLETED = 'completed',
-  ERROR = 'error',
+  WAITING = 'waiting', // Worker is waiting to be processed
+  INPROGRESS = 'inprogress', // Worker is currently being processed
+  INPROGRESS_WITH_ERRORS = 'inprogress_with_errors', // Worker is being processed but encountered errors
+  UNFINISHED = 'unfinished', // Worker has been processed but not completed
+  UNFINISHED_WITH_ERRORS = 'unfinished_with_errors', // Worker has been processed but not completed and encountered errors
+  COMPLETED = 'completed', // Worker has been successfully completed
+  ERROR = 'error', // Worker encountered an error during processing
+  COMPLETED_WITH_ERRORS = 'completed_with_errors', // Worker has been completed but with errors
+}
+
+export interface Task {
+  id: number;
+  scope: Scope;
+  status: WorkerStatus;
+  statusMessage?: string; //optional message to display in the UI
 }
 
 export interface Worker {
   id: string;
   name: string;
-  scope: WorkerScope;
+  scope: Scope;
+  scopeKey: string; //needed for indexeddb
   status: WorkerStatus;
-  createdAt: Date;
+  statusMessage?: string; //optional message to display in the UI
+  createdAt: string; // ISO date string
+  estimatedDuration: number; // ms
+  params: PluginParams;
+  queue: Task[];
 }
 
-export type CollectionScope = { collectionId: string };
-export type CanvasScope = { canvasId: string; collectionId: string };
-export type AnnotationScope = { annotationId: string };
-export type WorkerScope = CollectionScope | CanvasScope | AnnotationScope;
-
-export function isCollectionScope(scope: WorkerScope): scope is CollectionScope {
-  return 'collectionId' in scope && !('canvasId' in scope);
+export interface WorkerResponse {
+  status: WorkerStatus;
+  statusMessage?: string; //optional message to display in the UI
+  content?: unknown;
 }
 
-export function isCanvasScope(scope: WorkerScope): scope is CanvasScope {
-  return 'collectionId' in scope && 'canvasId' in scope;
+export interface WorkerCreateDTO {
+  name: string;
+  scope: Scope;
+  params: PluginParams;
 }
 
-export function isAnnotationScope(scope: WorkerScope): scope is AnnotationScope {
-  return 'annotationId' in scope;
-}
-
-export function isSameScope(s1: WorkerScope, s2: WorkerScope): boolean {
-  if (isCollectionScope(s1) && isCollectionScope(s2)) {
-    return s1.collectionId === s2.collectionId;
-  }
-  if (isCanvasScope(s1) && isCanvasScope(s2)) {
-    return s1.canvasId === s2.canvasId && s1.collectionId === s2.collectionId;
-  }
-  if (isAnnotationScope(s1) && isAnnotationScope(s2)) {
-    return s1.annotationId === s2.annotationId;
-  }
-  return false;
+/*
+ * Type guard to check if an object is a Worker.
+ * This is used to differentiate between Worker and WorkerCreateDTO. A worker has an id, scopeKey, status, and createdAt properties.
+ */
+export function isWorker(obj: Worker | WorkerCreateDTO): obj is Worker {
+  return 'id' in obj && 'scopeKey' in obj && 'status' in obj && 'createdAt' in obj;
 }

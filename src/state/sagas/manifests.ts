@@ -1,20 +1,19 @@
+import { importerPlugins } from '@/App';
 import { History } from '@/data/models/History';
 import { ItemMetadata, ItemMetadataAttribute } from '@/data/models/Metadata';
 import {
   getItemMetadataRepository,
   getManifestRepository,
 } from '@/data/repositories/indexeddb/dbFactory';
-import { convertJsonToManifest } from '@/utils/manifest';
-import { getErrorMessage, onlyLettersAndNumbers } from '@/utils/utils';
+import i18n from '@/i18n';
+import { containsArkIdentifier, convertJsonToManifest, isManifestUrl } from '@/utils/manifest';
+import { getErrorMessage } from '@/utils/utils';
 import { Manifest } from '@iiif/presentation-3';
-import i18next from 'i18next';
 import { call, Effect, put, takeEvery, takeLatest } from 'redux-saga/effects';
+import { pushInfo } from '../reducers/events';
 import {
+  fecthManifestRequest,
   fetchManifestError,
-  fetchManifestFromArkRequest,
-  fetchManifestFromContentRequest,
-  fetchManifestFromUrlRequest,
-  FetchManifestPayload,
   fetchManifestSuccess,
   removeFromHistoryRequest,
   removeFromHistorySuccess,
@@ -24,9 +23,7 @@ import {
   setHistory,
   updateHistorySuccess,
 } from '../reducers/manifests';
-import { ImporterPlugin, loadImporterPlugins } from './plugins/loader';
 
-const importerPlugins: Record<string, ImporterPlugin> = loadImporterPlugins();
 const keys = Object.keys(importerPlugins);
 
 /**
@@ -35,49 +32,50 @@ const keys = Object.keys(importerPlugins);
  * from the URL.
  * @param action The action containing the URL of the manifest to fetch.
  */
-function* handleFetchManifestFromURL(action: {
-  payload: FetchManifestPayload;
-}): Generator<Effect, void, Manifest> {
-  const url = action.payload.manifestId;
+function* handleFetchManifestFromURL(url: string): Generator<Effect, void, Manifest> {
   // const forceV3 = action.payload.forceV3;
   try {
     const manifestRepository = getManifestRepository();
     const manifest = yield call([manifestRepository, manifestRepository.getManifest], url);
-    yield call(handleFetchManifest, { storedManifest: manifest });
+    yield call(fetchManifest, { storedManifest: manifest });
   } catch (error) {
+    // If the manifest is not found in IndexedDB, we try to fetch it from the URL
     const importerKey = keys.find((key) => url.includes(key));
     const importer =
       importerKey !== undefined ? importerPlugins[importerKey] : importerPlugins['default'];
     if (importer !== undefined && importer !== null) {
-      yield call(handleFetchManifest, { fetchFunction: () => importer.import(url) });
+      try {
+        yield call(fetchManifest, { fetchFunction: () => importer.import(url) });
+      } catch (err) {
+        const msg = i18n.t('error_loading_manifest', { error: getErrorMessage(err) });
+        yield put(fetchManifestError(msg));
+      }
     }
 
     // yield call(handleFetchManifest, { fetchFunction: () => gallicaImporter(url, forceV3) });
   }
 }
 
-/**
- * Side effect to fetch a manifest from an Ark reference. It constructs the URL using the Ark reference
- * and fetches the manifest from the URL.
- * @remarks If the Ark reference contains invalid characters, it dispatches an error action.
- * @param action The action containing the Ark reference to fetch the manifest from.
- */
-function* handleFetchManifestFromArk(action: { payload: string }) {
-  if (!onlyLettersAndNumbers(action.payload)) {
-    yield put(fetchManifestError(i18next.t('error_ark_invalid')));
-  }
-  //build the URL based on old Gallica API
-  const url = `https://gallica.bnf.fr/iiif/ark:/12148/${action.payload}/manifest.json`;
-  yield call(handleFetchManifestFromURL, { payload: { manifestId: url } });
-}
+function* handleFetchManifest(action: { payload: string }) {
+  try {
+    const manifestInput = action.payload;
+    console.log('handleFetchManifest ', manifestInput);
+    console.log('handleFetchManifest ', isManifestUrl(manifestInput));
 
-/**
- * Side effect to fetch a manifest from the content of an action. It parses the content
- * and fetches the manifest from it.
- * @param action The action containing the manifest content to fetch.
- */
-function* handleFetchManifestFromContent(action: { payload: string }) {
-  yield handleFetchManifest({ fetchFunction: () => JSON.parse(action.payload) as object });
+    if (isManifestUrl(manifestInput)) {
+      yield call(handleFetchManifestFromURL, manifestInput);
+    } else if (containsArkIdentifier(manifestInput)) {
+      //build the URL based on old Gallica API
+      //TODO: il faudrait pouvoir s'adapter à d'autres ark que ceux de Gallica. Infos : https://arks.org/ark:/12148 https://n2t-dev.n2t.net/e/n2t_apidoc.html
+      const url = `https://gallica.bnf.fr/iiif/${manifestInput}/manifest.json`;
+      yield call(handleFetchManifestFromURL, url);
+    } else {
+      yield call(fetchManifest, { fetchFunction: () => JSON.parse(manifestInput) as object });
+    }
+  } catch (error) {
+    const msg = i18n.t('error_loading_manifest', { error: getErrorMessage(error) });
+    yield put(fetchManifestError(msg));
+  }
 }
 
 /**
@@ -86,68 +84,65 @@ function* handleFetchManifestFromContent(action: { payload: string }) {
  * @param fetchFunction: A function to fetch the manifest. If not provided, it uses the stored manifest.
  * @param storedManifest: The manifest to use if fetchFunction is not provided.
  */
-function* handleFetchManifest({
+function* fetchManifest({
   fetchFunction,
   storedManifest,
 }: {
   fetchFunction?: () => Promise<object> | object;
   storedManifest?: Manifest;
 }): Generator<Effect, void, Manifest | ItemMetadataAttribute[] | History> {
-  try {
-    let manifest: Manifest;
-    if (fetchFunction) {
-      const data = yield call(fetchFunction);
-      if (
-        '@context' in data &&
-        data['@context'] === 'http://iiif.io/api/presentation/3/context.json'
-      ) {
-        manifest = data;
-      } else {
-        manifest = convertJsonToManifest(data);
-      }
-    } else if (storedManifest !== undefined) {
-      manifest = storedManifest;
+  let manifest: Manifest;
+  if (fetchFunction) {
+    const data = yield call(fetchFunction);
+    if (
+      '@context' in data &&
+      data['@context'] === 'http://iiif.io/api/presentation/3/context.json'
+    ) {
+      manifest = data;
     } else {
-      yield put(fetchManifestError(i18next.t('error_no_manifest_method')));
-      return;
+      manifest = convertJsonToManifest(data);
     }
+  } else if (storedManifest !== undefined) {
+    manifest = storedManifest;
+  } else {
+    throw new Error(i18n.t('error_no_manifest_method'));
+  }
 
-    //load the metadata
-    const manifestRepository = getManifestRepository();
-    const result = yield call(
-      [manifestRepository, manifestRepository.loadMetadataForManifest],
-      manifest.id,
-    );
-    const metadata: ItemMetadataAttribute[] = Array.isArray(result) ? result : [];
+  //load the metadata
+  const manifestRepository = getManifestRepository();
+  const result = yield call(
+    [manifestRepository, manifestRepository.loadMetadataForManifest],
+    manifest.id,
+  );
+  const metadata: ItemMetadataAttribute[] = Array.isArray(result) ? result : [];
 
-    yield put(
-      fetchManifestSuccess({
-        content: manifest,
-        metadata,
-      }),
-    );
+  yield put(
+    fetchManifestSuccess({
+      content: manifest,
+      metadata,
+    }),
+  );
 
-    //save the manifest to indexedDB
-    if (storedManifest === undefined) {
-      try {
-        yield call([manifestRepository, manifestRepository.saveManifest], manifest);
-      } catch (error) {
-        console.warn('Error saving manifest to indexedDB', error);
-      }
-    }
+  yield put(pushInfo(i18n.t('info_manifest_loaded')));
 
-    //add the manifest to the history
+  //save the manifest to indexedDB
+  if (storedManifest === undefined) {
     try {
-      const addedHistory = (yield call(
-        [manifestRepository, manifestRepository.addToHistory],
-        manifest.id,
-      )) as History;
-      yield put(updateHistorySuccess(addedHistory));
+      yield call([manifestRepository, manifestRepository.saveManifest], manifest);
     } catch (error) {
-      console.warn('Error adding url to indexedDB history: ', error);
+      console.warn('Error saving manifest to indexedDB', error);
     }
+  }
+
+  //add the manifest to the history
+  try {
+    const addedHistory = (yield call(
+      [manifestRepository, manifestRepository.addToHistory],
+      manifest.id,
+    )) as History;
+    yield put(updateHistorySuccess(addedHistory));
   } catch (error) {
-    yield put(fetchManifestError(getErrorMessage(error)));
+    console.warn('Error adding url to indexedDB history: ', error);
   }
 }
 
@@ -206,19 +201,9 @@ function* handleSaveMetadata({
 }
 
 export default function* viewerSaga() {
-  yield takeLatest(fetchManifestFromContentRequest, handleFetchManifestFromContent);
-  yield takeLatest(fetchManifestFromUrlRequest, handleFetchManifestFromURL);
-  yield takeLatest(fetchManifestFromArkRequest, handleFetchManifestFromArk);
+  yield takeLatest(fecthManifestRequest, handleFetchManifest);
   yield takeEvery(saveMetadataRequest, handleSaveMetadata);
   yield takeEvery(removeFromHistoryRequest, handleRemoveFromHistory);
 }
 
-export {
-  handleFetchManifest,
-  handleFetchManifestFromArk,
-  handleFetchManifestFromContent,
-  handleFetchManifestFromURL,
-  handleRemoveFromHistory,
-  handleSaveMetadata,
-  loadHistorySaga,
-};
+export { handleFetchManifest, handleRemoveFromHistory, handleSaveMetadata, loadHistorySaga };
