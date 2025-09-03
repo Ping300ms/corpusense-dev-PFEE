@@ -1,7 +1,5 @@
-import { SelectedCanvas } from '@/data/models/SelectedCanvas';
-import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
-import { setCanvasFromComponent } from '@/state/reducers/canvas';
-import { setSelection } from '@/state/reducers/selection';
+import { useAppSelector } from '@/hooks/hooks';
+import { useCanvasSelection } from '@/hooks/useCanvasSelection';
 import { getCanvases, getManifestURL } from '@/state/selectors/manifests';
 import { Canvas } from '@iiif/presentation-3';
 import { FC, useRef, useState } from 'react';
@@ -55,13 +53,18 @@ const GridCell: FC<GridCellProps> = ({ columnIndex, rowIndex, style, data }) => 
   );
 };
 
-const CanvasGallery = ({ canvasViewerName }: { canvasViewerName: string }) => {
-  const dispatch = useAppDispatch();
+const CanvasGallery = ({
+  setCanvasToDisplay,
+}: {
+  setCanvasToDisplay: (canvas: Canvas) => void;
+}) => {
+  const { t } = useTranslation();
   const canvases = useAppSelector(getCanvases);
   const manifestId = useAppSelector(getManifestURL);
+  const { setSelection } = useCanvasSelection();
+
   const containerRef = useRef(null);
   const [_focused, setFocused] = useState<EventTarget | null>(null);
-  const { t } = useTranslation();
 
   const handleCardClick = (target: EventTarget, canvas: Canvas) => {
     setFocused((prev) => {
@@ -74,33 +77,13 @@ const CanvasGallery = ({ canvasViewerName }: { canvasViewerName: string }) => {
       return target;
     });
 
-    //TODO! Vérifications à faire
     if (canvas != null) {
-      dispatch(
-        setCanvasFromComponent({
-          componentId: canvasViewerName,
-          canvas,
-        }),
-      );
+      setCanvasToDisplay(canvas);
     }
   };
 
   const handleSelect = (e: OnSelect) => {
-    const selection: SelectedCanvas[] = [];
-    let start = Number.MAX_VALUE;
-    let end = -1;
-    e.selected.forEach((el) => {
-      if (el?.dataset?.index !== undefined) {
-        selection.push({ index: +el.dataset.index, canvas: canvases[+el.dataset.index] });
-        if (+el.dataset.index < start) {
-          start = +el.dataset.index;
-        }
-        if (+el.dataset.index > end) {
-          end = +el.dataset.index;
-        }
-      }
-    });
-    dispatch(setSelection({ selection, start, end }));
+    setSelection(e.selected.map((el) => el.dataset.index).map(Number));
   };
 
   return (
@@ -122,7 +105,7 @@ const CanvasGallery = ({ canvasViewerName }: { canvasViewerName: string }) => {
             {({ height, width }) => (
               <Grid
                 columnCount={4}
-                columnWidth={width / 4}
+                columnWidth={width / 4 - 10}
                 height={height}
                 rowCount={Math.ceil(canvases.length / 4)}
                 rowHeight={150}

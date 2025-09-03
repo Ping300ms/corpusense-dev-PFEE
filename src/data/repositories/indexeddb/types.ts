@@ -1,5 +1,5 @@
-import { Annotation, ElementType } from '@/data/models/Annotation';
-import { Collection } from '@/data/models/Collection';
+import { Annotation, AnnotationDTO, ElementType } from '@/data/models/Annotation';
+import { Collection, CollectionDetails } from '@/data/models/Collection';
 import { CollectionElement } from '@/data/models/CollectionElement';
 import { DataModel } from '@/data/models/DataModel';
 import { History } from '@/data/models/History';
@@ -7,43 +7,33 @@ import { ItemMetadata, ItemMetadataAttribute } from '@/data/models/Metadata';
 import { NamedEntity } from '@/data/models/NamedEntity';
 import { Result, ResultCreateDTO } from '@/data/models/Result';
 import { Scope } from '@/data/models/Scope';
-import { SelectedCanvas } from '@/data/models/SelectedCanvas';
-import { StoredItem } from '@/data/models/StoredItem';
+import { StoredManifestDetails } from '@/data/models/StoredManifest';
 import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
 import { Canvas, Manifest } from '@iiif/presentation-3';
 
 export interface AnnotationRepository {
-  getAnnotationsForCanvas(canvasId: string, collectionId: string): Promise<Annotation[]>;
-  getAnnotationsForCanvasByType(
-    canvasId: string,
-    collectionId: string,
-    type: ElementType,
-  ): Promise<Annotation[]>;
-  getAnnotationsForCollection(collectionId: string): Promise<Annotation[]>;
   getById(id: string): Promise<Annotation>;
-  saveAllAnnotations(annotations: Annotation[]): Promise<void>;
+  getAnnotationsByScope(scope: Scope): Promise<Annotation[]>;
+  getAnnotationsByScopeAndType(scope: Scope, types: ElementType[]): Promise<Annotation[]>;
+  getNextOrderByScopeAndType(scope: Scope, type: ElementType): Promise<number>;
+  saveAllAnnotations(annotations: AnnotationDTO[]): Promise<Annotation[]>;
   removeAllById(ids: string[]): Promise<string[]>;
+  removeById(id: string): Promise<void>;
   removeByScope(scope: Scope): Promise<string[]>;
+  removeByScopeAndType(scope: Scope, types: ElementType[]): Promise<string[]>;
   updateAnnotation(annotation: Annotation): Promise<void>;
   updateOrder(annotationId: string, order: number): Promise<void>;
 }
-export interface CanvasRepository {
-  getCanvasById(id: string): Promise<Canvas>;
-  exists(id: string): Promise<boolean>;
-  add(canvas: Canvas, manifestId: string): Promise<void>;
-}
 
 export interface CollectionRepository {
-  getAll(): Promise<Collection[]>;
+  getAll(): Promise<CollectionDetails[]>;
   getCollectionById(id: string): Promise<Collection>;
+  getTagsByCollectionId(collectionId: string): Promise<Tag[]>;
   getCanvasesByCollectionId(collectionId: string): Promise<Canvas[]>;
+  getCanvasInCollectionById(canvasId: string, collectionId: string): Promise<Canvas>;
   insertCollection(collection: Collection): Promise<void>;
-  saveCollectionContent(
-    collection: Collection,
-    selection: SelectedCanvas[],
-    manifestId: string,
-  ): Promise<void>;
+  saveCollectionContent(collection: Collection): Promise<void>;
   update(
     id: string,
     { name, tags, content }: { name: string; tags: string[]; content: CollectionElement[] },
@@ -60,17 +50,15 @@ export interface ItemMetadataRepository {
 
 export interface ManifestRepository {
   exists(id: string): Promise<boolean>;
-  getCanvases(manifestId: string, canvasId: string): Promise<Canvas>;
-  getManifest(manifestId: string): Promise<Manifest>;
+  getCanvasById(manifestId: string, canvasId: string): Promise<Canvas>;
+  getCanvasByIds(manifestId: string, canvasId: string[]): Promise<Canvas[]>;
+  getManifestById(manifestId: string): Promise<Manifest>;
+  getManifestDetailsByIds(manifestIds: string[]): Promise<StoredManifestDetails[]>;
   loadMetadataForManifest(manifestId: string): Promise<ItemMetadataAttribute[]>;
   saveManifest(manifest: Manifest): Promise<void>;
   addToHistory(url: string): Promise<History>;
   removeFromHistory(url: string): Promise<void>;
   getHistory(): Promise<History[]>;
-}
-
-export interface StoredItemRepository {
-  getAll(): Promise<StoredItem[]>;
 }
 
 export interface TagRepository {
@@ -97,7 +85,7 @@ export interface NamedEntityRepository {
 }
 
 export interface ResultRepository {
-  addResult(result: ResultCreateDTO): Promise<void>;
+  addResult(result: ResultCreateDTO): Promise<Result>;
   patch(id: number, changes: Partial<Result>): Promise<void>;
   selectAll(): Promise<Result[]>;
   selectByWorkerName(workerName: string): Promise<Result[]>;
@@ -107,7 +95,8 @@ export interface ResultRepository {
 
 export interface WorkerRepository {
   add(worker: Worker): Promise<Worker>;
-  delete(worker: Worker): Promise<void>;
+  delete(workerId: string): Promise<void>;
+  deleteByScope(scope: Scope): Promise<void>;
   update(worker: Worker): Promise<void>;
   patch(id: string, changes: Partial<Worker>): Promise<void>;
   selectAll(): Promise<Worker[]>;

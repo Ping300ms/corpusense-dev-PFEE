@@ -9,7 +9,6 @@ import {
 import { convertW3CAnnotationsToIIIF, IIIF_CONTEXT } from '../models/converters/iiif';
 import {
   getAnnotationRepository,
-  getCanvasRepository,
   getCollectionRepository,
   getTagRepository,
 } from '../repositories/indexeddb/dbFactory';
@@ -65,7 +64,10 @@ const generateCanvas = async (
   collectionId: string,
 ): Promise<Canvas> => {
   try {
-    const canvas = await getCanvasRepository().getCanvasById(canvasId);
+    const canvas = await getCollectionRepository().getCanvasInCollectionById(
+      canvasId,
+      collectionId,
+    );
 
     let allAnnotationPages: AnnotationPage[] = [];
     //TODO: il faudra ajouter les annotations déjà existantes
@@ -95,7 +97,7 @@ const generateCanvas = async (
 };
 
 const generateAnnotationPage = async (canvasId: string, collectionId: string) => {
-  const result = await getAnnotationRepository().getAnnotationsForCanvas(canvasId, collectionId);
+  const result = await getAnnotationRepository().getAnnotationsByScope({ canvasId, collectionId });
   if (result === undefined || result.length === 0) {
     throw new Error(`No annotations found in canvas ${canvasId}`);
   }
@@ -110,10 +112,10 @@ const generateTextForAnnotation = async (annotation: Annotation) => {
     const canvasId = annotation.canvasId;
     const collectionId = annotation.collectionId;
     if (canvasId !== undefined && collectionId !== undefined) {
-      const annotations = await getAnnotationRepository().getAnnotationsForCanvas(
+      const annotations = await getAnnotationRepository().getAnnotationsByScope({
         canvasId,
         collectionId,
-      );
+      });
       let text = '';
       for (let i = 0; i < annotations.length; i++) {
         if (contains(annotation, annotations[i])) {
@@ -131,10 +133,10 @@ const generateTextForAnnotation = async (annotation: Annotation) => {
 };
 
 const generateTextFromCanvas = async (canvasId: string, collectionId: string) => {
-  const annotations = await getAnnotationRepository().getAnnotationsForCanvas(
+  const annotations = await getAnnotationRepository().getAnnotationsByScope({
     canvasId,
     collectionId,
-  );
+  });
   if (annotations === undefined || annotations.length === 0) {
     console.log(`No annotations found in canvas ${canvasId}`);
     return '';
@@ -144,6 +146,27 @@ const generateTextFromCanvas = async (canvasId: string, collectionId: string) =>
     const t = getAnnotationText(annotations[i]);
     if (t !== undefined && t.length > 0) {
       text = text.concat(t).concat('\n');
+    }
+  }
+  return text;
+};
+
+const generateNumberedTextFromCanvas = async (canvasId: string, collectionId: string) => {
+  const annotations = await getAnnotationRepository().getAnnotationsByScope({
+    canvasId,
+    collectionId,
+  });
+  if (annotations === undefined || annotations.length === 0) {
+    console.log(`No annotations found in canvas ${canvasId}`);
+    return '';
+  }
+  let text = '';
+  for (let i = 0; i < annotations.length; i++) {
+    const t = getAnnotationText(annotations[i]);
+    console.log(i, ' : ', t, annotations[i].order);
+
+    if (t !== undefined && t.length > 0) {
+      text = text.concat(`{{${i}}}`).concat(t).concat('\n');
     }
   }
   return text;
@@ -170,6 +193,7 @@ export {
   generateAnnotationPage,
   generateCanvas,
   generateManifestFromCollection,
+  generateNumberedTextFromCanvas,
   generateTextForAnnotation,
   generateTextForCollection,
   generateTextFromCanvas,

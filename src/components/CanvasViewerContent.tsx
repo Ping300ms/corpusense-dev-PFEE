@@ -1,33 +1,24 @@
-import { Annotation, ElementType } from '@/data/models/Annotation';
+import { Annotation, ElementType, isAnnotation } from '@/data/models/Annotation';
 import { useAppDispatch } from '@/hooks/hooks';
 import { useAddAnnotation } from '@/hooks/useSaveAnnotation';
-import {
-  removeAnnotationRequest,
-  saveAnnotationRequest,
-  updateAnnotationOrderValueRequest,
-} from '@/state/reducers/annotations';
-import { getAnnotations } from '@/state/selectors/annotations';
-import { RootState } from '@/state/store';
+import { updateAnnotationRequest } from '@/state/reducers/annotations';
+import { selectAnnotations } from '@/state/selectors/annotations';
 import '@annotorious/openseadragon/annotorious-openseadragon.css';
 import {
   AnnotationState,
   AnnotoriousOpenSeadragonAnnotator,
   DrawingStyleExpression,
   ImageAnnotation,
-  OpenSeadragonAnnotationPopup,
   OpenSeadragonAnnotator,
   OpenSeadragonViewer,
-  PopupProps,
   useAnnotations,
   useAnnotator,
-  useSelection,
 } from '@annotorious/react';
 import { Canvas } from '@iiif/presentation-3';
-import { useContext, useEffect, useRef } from 'react';
+import { useContext, useEffect, useMemo, useRef } from 'react';
 import { useSelector } from 'react-redux';
-import AnnotationForm from './AnnotationForm';
 import { HoverContext, ReducerContext } from './CanvasViewer';
-import { Button } from './ui/button';
+import { ACTIONS, CanvasViewerContentMode } from './reducers/CanvasViewerContentReducer';
 import withTools from './withTools';
 
 //bleu foncé : #264653
@@ -45,58 +36,22 @@ const colors = {
   [ElementType.REGION.toString()]: '#e76f51',
 };
 
-const AnnotationPopup = (props: PopupProps) => {
-  const appDispatch = useAppDispatch();
-  const annotation = props.annotation as Annotation;
-
-  const handlePlus = () => {
-    appDispatch(
-      updateAnnotationOrderValueRequest({
-        annotationId: annotation.id,
-        value: (annotation.order ?? -1) + 1,
-      }),
-    );
-  };
-
-  const handleMinus = () => {
-    appDispatch(
-      updateAnnotationOrderValueRequest({
-        annotationId: annotation.id,
-        value: (annotation.order ?? 1) - 1,
-      }),
-    );
-  };
-
-  return (
-    <div className='flex items-center gap-2 rounded-xl bg-white/75 p-2'>
-      <Button className='soft-button' onClick={handleMinus}>
-        -
-      </Button>
-      {annotation.order}
-      <Button className='soft-button' onClick={handlePlus}>
-        +
-      </Button>
-    </div>
-  );
-};
-
-export type CanvasViewerContentProps = {
+export const CanvasViewerContent = ({
+  canvas,
+  collectionId,
+}: {
   canvas: Canvas;
   collectionId?: string;
-};
-
-export const CanvasViewerContent = ({ canvas, collectionId }: CanvasViewerContentProps) => {
+}) => {
   console.log(`CanvasViewerContent - render ${canvas.id}, ${collectionId}`);
   const appDispatch = useAppDispatch();
   const anno = useAnnotator<AnnotoriousOpenSeadragonAnnotator>(); //useRef perd la référence lors des opérations de suppression...
-  const { selected } = useSelection(); //the annotation(s) selected in the annotorious viewer
+
   const annotationsInAnnotorious = useAnnotations();
-  const annotationsInStore = useSelector((state: RootState) =>
-    getAnnotations(state, canvas.id, collectionId ?? ''),
-  );
+  const annotationsInStore = useSelector(selectAnnotations);
   const addAnnotation = useAddAnnotation(); //logic to add an annotation to the store
 
-  const { cvcState } = useContext(ReducerContext); //the reducer/state of the canvas viewer
+  const { cvcState, cvcDispatch } = useContext(ReducerContext); //the reducer/state of the canvas viewer
   const { hoveredElement } = useContext(HoverContext);
 
   const isNewCanvas = useRef(true); //to check if the canvas is new (to avoid syncing the annotations when the canvas is the same)
@@ -133,23 +88,24 @@ export const CanvasViewerContent = ({ canvas, collectionId }: CanvasViewerConten
     }
   }, [annotationsInStore]);
 
-  const handleDeleteAnnotation = (id: string) => {
-    appDispatch(removeAnnotationRequest(id)); //we don't need to remove the annotation from annotorious (anno.removeAnnotation(id)), it will be removed automatically (when sync with the store)
-  };
-
   //initialize the Annotorious
   useEffect(() => {
     if (anno === null || anno === undefined) return;
 
     const onCreate = (annotation: ImageAnnotation) => {
       if (collectionId !== undefined) {
+        console.log('Creating annotation ', annotation);
+
         addAnnotation(annotation, canvas.id, collectionId);
       } else {
         console.warn('No collectionId provided, annotation not saved');
       }
+      cvcDispatch({ type: ACTIONS.SET_MODE, payload: CanvasViewerContentMode.MOVE });
     };
-    const onUpdate = (annotation: Annotation) => {
-      appDispatch(saveAnnotationRequest(annotation));
+    const onUpdate = (annotation: ImageAnnotation) => {
+      if (isAnnotation(annotation)) {
+        appDispatch(updateAnnotationRequest(annotation));
+      }
     };
 
     anno.on('createAnnotation', onCreate);
@@ -175,12 +131,6 @@ export const CanvasViewerContent = ({ canvas, collectionId }: CanvasViewerConten
     }
   }, [canvas]);
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Delete' && selected?.length > 0) {
-      handleDeleteAnnotation(selected[0].annotation.id);
-    }
-  };
-
   const style = (annotation: Annotation, state?: AnnotationState) => {
     const value = annotation.bodies[0]?.value ?? ElementType.TAG;
     return {
@@ -190,50 +140,42 @@ export const CanvasViewerContent = ({ canvas, collectionId }: CanvasViewerConten
     } as DrawingStyleExpression;
   };
 
+  //TODO : on a des renders qui se produisent quand on déplace une annotation (??)
+  const options = useMemo(
+    () => ({
+      prefixUrl: `${import.meta.env.VITE_BASE_PATH}/images/`,
+      defaultZoomLevel: 0.5,
+      minZoomLevel: 0.1,
+      tileSources: cvcState?.source,
+      loadTilesWithAjax: true,
+      // crossOriginPolicy: 'false',
+      showSequenceControl: true,
+      showHomeControl: true,
+      showFullPageControl: true,
+      gestureSettingsMouse: {
+        clickToZoom: false,
+      },
+    }),
+    [cvcState?.source],
+  );
+
   return (
     <OpenSeadragonAnnotator
       autoSave={true}
       drawingMode='drag'
-      drawingEnabled={cvcState?.mode === 'draw'}
+      drawingEnabled={cvcState?.mode === CanvasViewerContentMode.DRAW}
+      multiSelect={true}
       style={style}
     >
       <div
-        className={`relative h-full w-full ${cvcState?.mode === 'draw' ? 'cursor-pen-tool' : 'cursor-default'}`}
-        onKeyDown={handleKeyDown}
+        className={`relative h-full w-full ${cvcState?.mode === CanvasViewerContentMode.DRAW ? 'cursor-pen-tool' : 'cursor-default'}`}
       >
         <OpenSeadragonViewer
           aria-label='canvas viewer'
           className='h-full w-full bg-amber-50'
-          options={{
-            prefixUrl: `${import.meta.env.VITE_BASE_PATH}/images/`,
-            defaultZoomLevel: 0.5,
-            minZoomLevel: 0.1,
-            tileSources: cvcState?.source,
-            loadTilesWithAjax: true,
-            crossOriginPolicy: 'Anonymous',
-            showSequenceControl: true,
-            showHomeControl: true,
-            showFullPageControl: true,
-            gestureSettingsMouse: {
-              clickToZoom: false,
-            },
-          }}
+          options={options}
         />
-        {selected?.length > 0 && (
-          <div className='absolute bottom-0 left-0 w-full bg-amber-100'>
-            <AnnotationForm
-              canvas={canvas}
-              selected={selected}
-              handleDelete={handleDeleteAnnotation}
-            />
-          </div>
-        )}
       </div>
-      <OpenSeadragonAnnotationPopup
-        popup={(props) => <AnnotationPopup {...props} />}
-        arrow={true}
-        placement={'top'}
-      />
     </OpenSeadragonAnnotator>
   );
 };

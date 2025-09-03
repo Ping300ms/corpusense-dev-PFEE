@@ -8,6 +8,7 @@ import Layout from './pages/Layout';
 import ManifestExplorerPage from './pages/ManifestExplorerPage';
 import ModelsManagerPage from './pages/ModelsManagerPage';
 import StoragePage from './pages/StoragePage';
+import WorkersManagerPage from './pages/WorkersManagerPage';
 import { ImporterPlugin, loadImporterPlugins } from './state/sagas/plugins/loader';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
@@ -36,9 +37,10 @@ function App() {
             element={<CollectionInspectorPage />}
           />
           <Route path={CorpusenseRoutes.MODELS} element={<ModelsManagerPage />} />
-          {/* <Route path='*' element={<div>Oups...</div>} /> */}
           <Route path={CorpusenseRoutes.CONFIGURATION} element={<ConfigurationPage />} />
           <Route path={CorpusenseRoutes.STORAGE} element={<StoragePage />} />
+          <Route path={CorpusenseRoutes.WORKERS} element={<WorkersManagerPage />} />
+          <Route path={`${CorpusenseRoutes.WORKERS}/:workerId`} element={<WorkersManagerPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

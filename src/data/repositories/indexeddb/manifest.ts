@@ -1,3 +1,6 @@
+import { StoredManifestDetails } from '@/data/models/StoredManifest';
+import { getCanvasById, getCanvasesByIds, getManifestDetails } from '@/data/utils/manifest';
+import { getErrorMessage } from '@/utils/utils';
 import { Canvas, Manifest } from '@iiif/presentation-3';
 import i18next from 'i18next';
 import { db } from './db';
@@ -5,26 +8,48 @@ import { ManifestRepository } from './types';
 
 export class IndexedDBManifestRepository implements ManifestRepository {
   async exists(id: string): Promise<boolean> {
-    return !!(await db.storedItems.get(id));
+    return !!(await db.storedManifests.get(id));
   }
 
-  async getCanvases(manifestId: string, canvasId: string): Promise<Canvas> {
-    const manfiest = await db.storedItems.get(manifestId);
-    if (manfiest) {
-      const canvas = manfiest.content.items?.find((item) => item.id === canvasId);
-      if (canvas) {
-        return canvas as Canvas;
+  async getCanvasById(manifestId: string, canvasId: string): Promise<Canvas> {
+    try {
+      const manifest = await this.getManifestById(manifestId);
+      return getCanvasById(manifest, canvasId);
+    } catch (error) {
+      // throw new Error(i18next.t('error_canvas_not_found'));
+      throw new Error(getErrorMessage(error));
+    }
+  }
+
+  async getCanvasByIds(manifestId: string, canvasIds: string[]): Promise<Canvas[]> {
+    try {
+      const manifest = await this.getManifestById(manifestId);
+      const canvases = getCanvasesByIds(manifest, canvasIds);
+      if (canvases?.length > 0) {
+        return canvases;
       }
+    } catch (error) {
+      // throw new Error(i18next.t('error_canvas_not_found'));
+      throw new Error(getErrorMessage(error));
     }
     throw new Error(i18next.t('error_canvas_not_found'));
   }
 
-  async getManifest(manifestId: string): Promise<Manifest> {
-    const manifest = await db.storedItems.get(manifestId);
-    if (manifest !== undefined) {
-      return manifest.content as Manifest;
+  async getManifestById(manifestId: string): Promise<Manifest> {
+    try {
+      const manifestContent = await db.storedManifestContents.get(manifestId);
+      if (!manifestContent) {
+        throw new Error(i18next.t('error_manifest_not_found_storage'));
+      }
+      return manifestContent.content;
+    } catch (error) {
+      // throw new Error(i18next.t('error_manifest_not_found'));
+      throw new Error(getErrorMessage(error));
     }
-    throw new Error(i18next.t('error_manifest_not_found'));
+  }
+
+  async getManifestDetailsByIds(manifestIds: string[]): Promise<StoredManifestDetails[]> {
+    return await db.storedManifests.where('id').anyOf(manifestIds).toArray();
   }
 
   async loadMetadataForManifest(manifestId: string) {
@@ -33,11 +58,12 @@ export class IndexedDBManifestRepository implements ManifestRepository {
   }
 
   async saveManifest(manifest: Manifest) {
-    try {
-      await db.storedItems.add({ id: manifest.id, content: manifest });
-    } catch (error) {
-      console.warn('Error saving manifest to indexedDB', error);
-    }
+    const { name, thumbnail } = getManifestDetails(manifest);
+
+    await db.transaction('rw', db.storedManifests, db.storedManifestContents, async () => {
+      await db.storedManifests.add({ id: manifest.id, name, thumbnail });
+      await db.storedManifestContents.add({ id: manifest.id, content: manifest });
+    });
   }
 
   async getHistory() {

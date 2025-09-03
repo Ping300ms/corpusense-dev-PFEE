@@ -1,44 +1,46 @@
-import { ElementType } from '@/data/models/Annotation';
+import { Annotation, ElementType } from '@/data/models/Annotation';
 import { DataModel } from '@/data/models/DataModel';
 import { Worker } from '@/data/models/Worker';
-import { useAppDispatch } from '@/hooks/hooks';
+import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import {
   duplicateAnnotationsEach2PagesRequest,
   duplicateAnnotationsToAllPagesRequest,
-  removeAllCanvasAnnotationsRequest,
+  removeAnnotationsByScopeRequest,
+  removeAnnotationsRequest,
 } from '@/state/reducers/annotations';
 import { exportTextOfCanvasRequest } from '@/state/reducers/export';
 import { exportWorkerResultRequest, startWorkerProcess } from '@/state/reducers/workers';
 import { getAnnotationsByType } from '@/state/selectors/annotations';
+import { isWorkerOrTaskRunning } from '@/state/selectors/workers';
 import { RootState } from '@/state/store';
-import { Move, SquarePen } from 'lucide-react';
+import { useSelection } from '@annotorious/react';
+import { Canvas } from '@iiif/presentation-3';
+import { NotebookPen } from 'lucide-react';
 import React, { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import AnnotationForm from './AnnotationForm';
 import { ReducerContext } from './CanvasViewer';
-import { CanvasViewerContentProps } from './CanvasViewerContent';
 import LayoutMenu from './menu/LayoutMenu';
-import { ACTIONS } from './reducers/CanvasViewerContentReducer';
+import { ACTIONS, CanvasViewerContentMode } from './reducers/CanvasViewerContentReducer';
 import SelectModelForm from './textviewer/SelectModelForm';
 import Toolbar from './ToolBar';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { Label } from './ui/label';
-import { Switch } from './ui/switch';
+import { Toggle } from './ui/toggle';
 
 export const withTools = <T extends object>(WrappedComponent: React.ComponentType<T>) => {
-  const ComponentWithTools = (props: CanvasViewerContentProps) => {
+  const ComponentWithTools = (props: { collectionId: string; canvas: Canvas }) => {
     const appDispatch = useAppDispatch();
     const { t } = useTranslation();
     const { cvcState, cvcDispatch } = useContext(ReducerContext);
     const [dialogOpen, setDialogOpen] = useState(false);
+    const { selected } = useSelection(); //the annotation(s) selected in the annotorious viewer
+    const isWorkerRunning = useAppSelector((state) =>
+      isWorkerOrTaskRunning(state, { collectionId: props.collectionId }),
+    );
 
     const regionAnnotations = useSelector((state: RootState) =>
-      getAnnotationsByType(
-        state,
-        cvcState.canvas?.id ?? '',
-        props.collectionId ?? '',
-        ElementType.REGION,
-      ),
+      getAnnotationsByType(state, ElementType.REGION),
     );
 
     // const handleStartLayoutAnalysis = () => {
@@ -59,7 +61,6 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
 
     const handleStartOcrAnalysis = () => {
       if (cvcState?.image?.id !== undefined && props.collectionId !== undefined) {
-        // appDispatch(fetchOcrRequest({ canvas: props.canvas, collectionId: props.collectionId }));
         appDispatch(
           startWorkerProcess({
             workerName: 'peroocr',
@@ -92,9 +93,11 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
     const handleDeleteAllAnnotations = () => {
       if (props.collectionId !== undefined) {
         appDispatch(
-          removeAllCanvasAnnotationsRequest({
-            canvasId: props.canvas.id,
-            collectionId: props.collectionId,
+          removeAnnotationsByScopeRequest({
+            scope: {
+              canvasId: props.canvas.id,
+              collectionId: props.collectionId,
+            },
           }),
         );
       }
@@ -139,46 +142,79 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
       }
     };
 
-    return (
-      <div className='flex h-full w-full flex-col'>
-        <h4 className='w-full border-b-1 text-center text-sm italic'>{props.canvas?.id}</h4>
-        <div className='m-1 flex h-auto w-full gap-2 space-x-2'>
-          <Toolbar
-            handleOcr={handleStartOcrAnalysis}
-            handleExportText={handleExportText}
-            handleDeleteAllAnnotations={handleDeleteAllAnnotations}
-            // handleLayout={handleStartLayoutAnalysis}
-            handleExtractData={handleExtractData}
-            handleExportResult={handleExportResult}
-            scope={{ canvasId: cvcState.canvas?.id ?? '', collectionId: props.collectionId ?? '' }}
-          />
+    const handleAddAnnotation = () => {
+      if (cvcState.mode === CanvasViewerContentMode.DRAW) {
+        cvcDispatch({ type: ACTIONS.SET_MODE, payload: CanvasViewerContentMode.MOVE });
+      } else {
+        cvcDispatch({ type: ACTIONS.SET_MODE, payload: CanvasViewerContentMode.DRAW });
+      }
+    };
 
-          <div className='flex items-center space-x-1 rounded-xl border p-2 align-middle'>
-            <Label className='flex items-center gap-1'>
-              <Move size={16} />
-              {t('btn_toggle_mode_view')}
-            </Label>
-            <Switch
-              id='viewer-mode'
-              onCheckedChange={() => cvcDispatch({ type: ACTIONS.TOGGLE_MODE })}
-            />
-            <Label className='flex items-center gap-1'>
-              {t('btn_toggle_mode_annotate')}
-              <SquarePen size={16} />{' '}
-            </Label>
+    const handleDeleteAnnotation = () => {
+      const ids = selected.map((s) => s.annotation.id);
+      appDispatch(removeAnnotationsRequest(ids)); //we don't need to remove the annotation from annotorious (anno.removeAnnotation(id)), it will be removed automatically (when sync with the store)
+    };
+
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Delete' && selected?.length > 0) {
+        handleDeleteAnnotation();
+      }
+    };
+
+    return (
+      <div className='flex h-full w-full flex-col' onKeyDown={handleKeyDown}>
+        <h4 className='w-full border-b-1 text-center text-sm italic'>{props.canvas?.id}</h4>
+        {isWorkerRunning ? (
+          <div>
+            <strong>{t('info_worker_running')}</strong>
           </div>
-          {regionAnnotations.length > 0 && (
-            <LayoutMenu
-              handleDuplicateToAll={handleDuplicateRegionToAllPages}
-              handleDuplicateEach2={handleDuplicateRegionEach2}
+        ) : (
+          <div className='m-1 flex h-auto w-full gap-2 space-x-2'>
+            <Toolbar
+              handleOcr={handleStartOcrAnalysis}
+              handleExportText={handleExportText}
+              handleDeleteAllAnnotations={handleDeleteAllAnnotations}
+              // handleLayout={handleStartLayoutAnalysis}
+              handleExtractData={handleExtractData}
+              handleExportResult={handleExportResult}
               scope={{
                 canvasId: cvcState.canvas?.id ?? '',
                 collectionId: props.collectionId ?? '',
               }}
             />
+            <Toggle
+              className='soft-button'
+              size={null}
+              title={t('btn_add_annotation')}
+              onClick={handleAddAnnotation}
+              pressed={cvcState.mode === CanvasViewerContentMode.DRAW}
+            >
+              <NotebookPen size={24} />
+            </Toggle>
+            {regionAnnotations.length > 0 && (
+              <LayoutMenu
+                handleDuplicateToAll={handleDuplicateRegionToAllPages}
+                handleDuplicateEach2={handleDuplicateRegionEach2}
+                scope={{
+                  canvasId: cvcState.canvas?.id ?? '',
+                  collectionId: props.collectionId ?? '',
+                }}
+              />
+            )}
+          </div>
+        )}
+        <div className='flex h-full w-full'>
+          <WrappedComponent {...(props as T)} />
+
+          {selected.length === 1 && (
+            <div className='max-w-1/2 min-w-1/3'>
+              <AnnotationForm
+                annotation={selected[0].annotation as Annotation}
+                handleDelete={handleDeleteAnnotation}
+              />
+            </div>
           )}
         </div>
-        <WrappedComponent {...(props as T)} />
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent>
@@ -186,7 +222,7 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
               <DialogTitle>{t('title_generate_data')}</DialogTitle>
               <DialogDescription>{t('description_select_model')}</DialogDescription>
             </DialogHeader>
-            <SelectModelForm close={close} />
+            <SelectModelForm close={close} collectionId={props.collectionId} />
           </DialogContent>
         </Dialog>
       </div>

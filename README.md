@@ -17,6 +17,18 @@ Il s'agit d'un fork. Composé de 2 branches :
 - develop : branche de développement
 - gh-pages : branche contenant le build de l'application (généré automatiquement lors d'un push sur la branche develop)
 
-### <https://github.com/Ping300ms/corpusense-dev-PFEE>
+Cette structure nous permet d'avoir en ligne 2 builds :
 
-Il s'agit d'un fork. Réalisé par l'équipe de PFEE chargée de développer une version collaborative de CorpuSense via websockets
+- <https://mezanno.xyz/corpusense/> : version stable de l'application
+- <https://mezanno.xyz/corpusense-dev/> : version d'essai de l'application utilisée pour les tests lors du développement
+
+## Technos utilisées
+
+- React : https://react.dev/
+- Redux (store) : https://redux.js.org/
+- Redux-Saga (opérations asynchrones) : https://redux-saga.js.org/
+- Shadcn/UI (composants React): https://ui.shadcn.com/
+- Tailwind CSS (framework CSS): https://tailwindcss.com/
+- Dexie (wrapper pour IndexedDB): https://dexie.org/
+- Annotorious + OpenSeaDragon (affichage d'images IIIF + annotation d'images) : https://annotorious.dev/
+-

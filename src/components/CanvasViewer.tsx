@@ -1,5 +1,3 @@
-import { useAppSelector } from '@/hooks/hooks';
-import { getCanvasForComponent } from '@/state/selectors/canvas';
 import '@annotorious/openseadragon/annotorious-openseadragon.css';
 import { Annotorious, useHover } from '@annotorious/react';
 import { Canvas } from '@iiif/presentation-3';
@@ -27,11 +25,13 @@ export const ReducerContext = createContext<{
   cvcDispatch: React.ActionDispatch<[action: CanvasViewerContentAction]>;
 }>({ cvcState: initialState, cvcDispatch: () => {} });
 
-const CanvasViewer = ({ name, colllectionId }: { name: string; colllectionId?: string }) => {
-  console.log('CanvasViewer - render', name);
-  //get the canvas to display from redux
-  const canvas = useAppSelector(getCanvasForComponent(name)) as Canvas;
-
+const CanvasViewer = ({
+  canvas,
+  colllectionId: collectionId,
+}: {
+  canvas?: Canvas;
+  colllectionId?: string;
+}) => {
   const [_hoveredElement, setHoveredElement] = useState<string | null>(null);
   const hover = useHover();
 
@@ -54,8 +54,8 @@ const CanvasViewer = ({ name, colllectionId }: { name: string; colllectionId?: s
       ) : (
         <Annotorious>
           <ReducerContext.Provider value={{ cvcState, cvcDispatch }}>
-            {colllectionId !== undefined ? (
-              <CanvasViewerContentWithTools canvas={canvas} collectionId={colllectionId} />
+            {collectionId !== undefined ? (
+              <CanvasViewerContentWithTools canvas={canvas} collectionId={collectionId} />
             ) : (
               <CanvasViewerContent canvas={canvas} />
             )}

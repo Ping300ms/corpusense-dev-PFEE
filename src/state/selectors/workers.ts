@@ -119,3 +119,11 @@ export const getCompletedWorkerByScopeAndName = createSelector(
     );
   },
 );
+
+export const hasResult = (state: RootState, workerId: string) =>
+  state.workers.results?.some((result) => result.workerId === workerId) ?? false;
+
+export const hasExport = (state: RootState, workerName: string) =>
+  state.workers.workerPluginsInfo?.some(
+    (plugin) => plugin.name === workerName && plugin.hasExport,
+  ) ?? false;

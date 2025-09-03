@@ -3,7 +3,6 @@ import { Collection } from '@/data/models/Collection';
 import { ItemMetadata } from '@/data/models/Metadata';
 import { Tag } from '@/data/models/Tag';
 import {
-  getCanvasRepository,
   getCollectionRepository,
   getItemMetadataRepository,
   getTagRepository,
@@ -25,7 +24,6 @@ import JSZIP from 'jszip';
 import { call, CallEffect, Effect, put, takeEvery, takeLatest } from 'redux-saga/effects';
 import { pushInfo } from '../reducers/events';
 import {
-  // exportError,
   exportMultipleCollectionsRequest,
   exportRequest,
   exportSuccess,
@@ -50,7 +48,6 @@ function* handleExportRequest(
   let header = 'nom_collection\turl\tnum_page\ttags';
 
   let firstTimeHeader = true;
-  const canvasRepository = getCanvasRepository();
   const tagRepository = getTagRepository();
   const itemMetadataRepository = getItemMetadataRepository();
   if (collectionToExport !== undefined) {
@@ -59,8 +56,9 @@ function* handleExportRequest(
       const collectionElement = collectionToExport.content[i];
       try {
         const canvas = (yield call(
-          [canvasRepository, canvasRepository.getCanvasById],
+          [collectionRepository, collectionRepository.getCanvasInCollectionById],
           collectionElement.canvasId,
+          collectionId,
         )) as Canvas;
 
         const image = getImage(canvas);

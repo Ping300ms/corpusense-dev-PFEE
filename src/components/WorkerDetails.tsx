@@ -1,8 +1,12 @@
 import { toString } from '@/data/models/Scope';
 import { WorkerStatus } from '@/data/models/Worker';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
-import { recoverWorkerRequest, stopWorkerProcessRequest } from '@/state/reducers/workers';
-import { getWorkerById } from '@/state/selectors/workers';
+import {
+  exportWorkerResultRequest,
+  recoverWorkerRequest,
+  stopWorkerProcessRequest,
+} from '@/state/reducers/workers';
+import { getWorkerById, hasExport, hasResult } from '@/state/selectors/workers';
 import { useTranslation } from 'react-i18next';
 import { getTaskStatusColor, getWorkerStatusIcon } from './workerUtils';
 
@@ -10,6 +14,9 @@ const WorkerDetails = ({ workerId }: { workerId: string }) => {
   const { t } = useTranslation();
   const appDispatch = useAppDispatch();
   const worker = useAppSelector((state) => getWorkerById(state, workerId));
+  const resultExists = useAppSelector((state) =>
+    worker ? hasExport(state, worker?.name) && hasResult(state, workerId) : false,
+  );
 
   if (worker === undefined) {
     return (
@@ -34,8 +41,12 @@ const WorkerDetails = ({ workerId }: { workerId: string }) => {
     appDispatch(stopWorkerProcessRequest(worker));
   };
 
+  const handleExportResult = () => {
+    appDispatch(exportWorkerResultRequest({ worker }));
+  };
+
   return (
-    <div className='overflow-auto p-4'>
+    <div className='flex h-screen flex-col p-4'>
       <div>
         <h2 className='text-lg font-bold'>{t('title_worker_details')}</h2>
         <ul>
@@ -45,7 +56,7 @@ const WorkerDetails = ({ workerId }: { workerId: string }) => {
           </li>
           <li>
             {t('list_title_worker_createdAt')}
-            {worker.createdAt}
+            {new Date(worker.createdAt).toLocaleString()}
           </li>
           <li>
             {t('list_title_worker_scope')}
@@ -53,54 +64,61 @@ const WorkerDetails = ({ workerId }: { workerId: string }) => {
           </li>
           <li>
             {t('list_title_worker_status')}
-            {worker.status}
+            {t(`worker_status_${worker.status}`)}
           </li>
         </ul>
-        {displayRestartButton && (
-          <button
-            className='soft-button border-yellow-500 text-yellow-500'
-            onClick={handleRecoverWorker}
-          >
-            {t('btn_recover')}
-          </button>
-        )}
-        {displayStopButton && (
-          <button className='soft-button border-red-500 text-red-500' onClick={handleStopWorker}>
-            {t('btn_stop_worker')}
-          </button>
-        )}
+        <div className='flex gap-2'>
+          {displayRestartButton && (
+            <button
+              className='soft-button border-yellow-500 text-yellow-500'
+              onClick={handleRecoverWorker}
+            >
+              {t('btn_recover')}
+            </button>
+          )}
+          {displayStopButton && (
+            <button className='soft-button border-red-500 text-red-500' onClick={handleStopWorker}>
+              {t('btn_stop_worker')}
+            </button>
+          )}
+          {resultExists && (
+            <button
+              className='soft-button border-blue-500 text-blue-500'
+              onClick={handleExportResult}
+            >
+              {t('btn_export_result', { name: worker.name })}
+            </button>
+          )}
+        </div>
       </div>
-      <div>
+      <div className='flex-1 overflow-y-auto'>
         <h3 className='text-md mt-4 font-semibold'>
           {t('title_worker_queue')}{' '}
           <span>({t('info_worker_queue_size', { size: worker.queue.length })})</span>
         </h3>
+
         <ul>
-          <li>
-            <ul>
-              {worker.queue.map((task) => (
-                <li
-                  key={task.id}
-                  className={`flex items-center gap-2 ${getTaskStatusColor(task.status)}`}
-                >
-                  <span
-                    className={`rounded px-2 py-1 text-sm ${getTaskStatusColor(task.status)} bg-opacity-10`}
-                  >
-                    {getWorkerStatusIcon(task.status)}
-                  </span>
-                  <strong>{t('table_col_title_taskID')}</strong>
-                  {task.id} -<strong>{t('table_col_title_status')}</strong>
-                  {task.status}
-                  {task.statusMessage !== undefined && (
-                    <span>
-                      {' '}
-                      - <em>{task.statusMessage}</em>
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </li>
+          {worker.queue.map((task) => (
+            <li
+              key={task.id}
+              className={`flex items-center gap-2 ${getTaskStatusColor(task.status)}`}
+            >
+              <span
+                className={`rounded px-2 py-1 text-sm ${getTaskStatusColor(task.status)} bg-opacity-10`}
+              >
+                {getWorkerStatusIcon(task.status)}
+              </span>
+              <strong>{t('table_col_title_taskID')}</strong>
+              {task.id} -<strong>{t('table_col_title_status')}</strong>
+              {t(`worker_status_${task.status}`)}
+              {task.statusMessage !== undefined && (
+                <span>
+                  {' '}
+                  - <em>{task.statusMessage}</em>
+                </span>
+              )}
+            </li>
+          ))}
         </ul>
       </div>
     </div>
