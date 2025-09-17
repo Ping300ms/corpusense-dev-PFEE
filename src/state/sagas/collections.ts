@@ -37,6 +37,7 @@ import {
 import { pushError, pushInfo } from '../reducers/events';
 import { removeWorkersSuccess } from '../reducers/workers';
 import { fetchManifestFromURL } from './manifests';
+import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 function* fetchAllCollections(): Generator<
   CallEffect<CollectionDetails[]> | PutEffect,
@@ -44,6 +45,9 @@ function* fetchAllCollections(): Generator<
   CollectionDetails[]
 > {
   try {
+    // const syncManager: SyncManager = SyncManager.getInstance();
+    // yield call([syncManager, syncManager.syncPendingFromTable<CollectionDetails>], 'collections');
+
     const collectionRepository = getCollectionRepository();
     const collections: CollectionDetails[] = yield call([
       collectionRepository,
@@ -65,6 +69,9 @@ function* handleCreateCollection(action: PayloadAction<string>) {
     yield call([collectionRepository, collectionRepository.create], newCollection);
     yield put(createCollectionSuccess(newCollection));
     yield put(pushInfo(i18n.t('toast_collection_created')));
+
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.create<CollectionDetails>], newCollection, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -87,6 +94,9 @@ function* handleUpdateCollection(action: PayloadAction<Collection>) {
 
     yield put(updateCollectionSuccess(action.payload));
     yield put(pushInfo(i18n.t('toast_collection_saved')));
+
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.sync<CollectionDetails>], action.payload, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -115,6 +125,9 @@ function* handleRemoveCollection(
     //A priori, plus besoin de prévenir le store, si on supprime une collection, c'est que l'on est sur la page des collections
     // yield put(removeAnnotationSuccess(collectionId));
     yield put(pushInfo(i18n.t('toast_collection_deleted')));
+
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.delete], id, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -164,6 +177,8 @@ function* handleAddSelectionToCollection(
     } else if (selection.length > 1) {
       yield put(pushInfo(i18n.t('toast_multiple_elements_added', { count: selection.length })));
     }
+
+    // TODO syncManager
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -209,6 +224,8 @@ function* handleCreateCollectionWithSelection(
     }
     yield put(createCollectionSuccess(newCollection));
     yield put(pushInfo(i18n.t('toast_collection_created')));
+
+    // TODO syncManager
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -229,6 +246,10 @@ function* handleRemoveElementFromCollection(
     );
     yield put(removeElementFromCollectionSuccess(updatedCollection));
     yield put(pushInfo(i18n.t('toast_element_removed')));
+
+    // TODO syncManager
+    // const syncManager: SyncManager = SyncManager.getInstance();
+    // yield call([syncManager, syncManager.delete], id, 'collectionContents');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
