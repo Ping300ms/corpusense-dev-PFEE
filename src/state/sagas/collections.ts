@@ -58,7 +58,7 @@ function* fetchAllCollections(): Generator<
 
 function* handleCreateCollection(action: PayloadAction<string>) {
   const name = action.payload;
-  const newCollection: Collection = { id: uuid(), name, tags: [], contentSize: 0, content: [] };
+  const newCollection: Collection = { id: uuid(), name, tags: [], contentSize: 0, content: [], updated_at: new Date().toISOString(), synced: false };
 
   try {
     const collectionRepository = getCollectionRepository();
@@ -186,6 +186,8 @@ function* handleCreateCollectionWithSelection(
     name,
     tags: [],
     contentSize: selection.length,
+    updated_at: new Date().toISOString(),
+    synced: false,
   };
   const content = generateCollectionContent(
     0,

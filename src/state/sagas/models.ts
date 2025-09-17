@@ -45,12 +45,14 @@ function* handleCreateModel(
     }
   }
 
-  const newModel = {
+  const newModel: DataModel = {
     id,
     name: name,
     description: description,
     fields,
     prompt,
+    updated_at: new Date().toISOString(),
+    synced: false,
   };
   const modelRespository = getModelRepository();
   yield call([modelRespository, modelRespository.add], newModel);
