@@ -21,8 +21,8 @@ import {
 import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 function* fetchModels(): Generator<Effect, void, DataModel[]> {
-  // const syncManager: SyncManager = SyncManager.getInstance();
-  // yield call([syncManager, syncManager.syncPendingFromTable<DataModel>], 'models');
+  const syncManager: SyncManager = SyncManager.getInstance();
+  yield call([syncManager, syncManager.pullFromRemote<DataModel>], 'models');
 
   const modelRespository = getModelRepository();
   const models = yield call([modelRespository, modelRespository.getAll]);

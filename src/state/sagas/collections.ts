@@ -1,5 +1,5 @@
 import { Annotation, ElementType } from '@/data/models/Annotation';
-import { Collection, CollectionDetails, ExportedCollection } from '@/data/models/Collection';
+import { Collection, CollectionContent, CollectionDetails, ExportedCollection } from '@/data/models/Collection';
 import {
   getAnnotationRepository,
   getCollectionRepository,
@@ -45,8 +45,8 @@ function* fetchAllCollections(): Generator<
   CollectionDetails[]
 > {
   try {
-    // const syncManager: SyncManager = SyncManager.getInstance();
-    // yield call([syncManager, syncManager.syncPendingFromTable<CollectionDetails>], 'collections');
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.pullFromRemote<CollectionDetails>], 'collections');
 
     const collectionRepository = getCollectionRepository();
     const collections: CollectionDetails[] = yield call([
@@ -167,18 +167,20 @@ function* handleAddSelectionToCollection(
       [collectionRepository, collectionRepository.addContentToCollection],
       updatedCollection,
     );
+
+    // TODO sync
     //Add first annotations for the new canvases
     const firstAnnotations = generateFirstAnnotation(selection, collectionId, existingCanvasIds);
     const annotationRepository = getAnnotationRepository();
     yield call([annotationRepository, annotationRepository.addAll], firstAnnotations);
     yield put(addSelectionToCollectionSuccess(updatedCollection));
+
+    // TODO sync
     if (selection.length === 1) {
       yield put(pushInfo(i18n.t('toast_one_element_added')));
     } else if (selection.length > 1) {
       yield put(pushInfo(i18n.t('toast_multiple_elements_added', { count: selection.length })));
     }
-
-    // TODO syncManager
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -216,16 +218,21 @@ function* handleCreateCollectionWithSelection(
       ...newCollection,
       content,
     });
+
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.create<CollectionDetails>], newCollection, 'collections');
+    yield call([syncManager, syncManager.create<CollectionContent>], { content, updated_at: new Date().toISOString(), synced: false } as CollectionContent, 'collectionContents');
+
     if (id === undefined) {
       //if an id was provided, it means it is an import, so we don't need to create the first annotations
       const firstAnnotations = generateFirstAnnotation(selection, collectionId);
       const annotationRepository = getAnnotationRepository();
       yield call([annotationRepository, annotationRepository.addAll], firstAnnotations);
+
+      // TODO sync
     }
     yield put(createCollectionSuccess(newCollection));
     yield put(pushInfo(i18n.t('toast_collection_created')));
-
-    // TODO syncManager
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -247,9 +254,9 @@ function* handleRemoveElementFromCollection(
     yield put(removeElementFromCollectionSuccess(updatedCollection));
     yield put(pushInfo(i18n.t('toast_element_removed')));
 
-    // TODO syncManager
-    // const syncManager: SyncManager = SyncManager.getInstance();
-    // yield call([syncManager, syncManager.delete], id, 'collectionContents');
+    const syncManager: SyncManager = SyncManager.getInstance();
+    yield call([syncManager, syncManager.sync<CollectionDetails>], updatedCollection, 'collections');
+    yield call([syncManager, syncManager.sync<CollectionContent>], updatedCollection, 'collectionContents');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }

@@ -7,7 +7,7 @@ export class SyncManager {
   private static instance: SyncManager | null = null;
 
   private readonly client: SupabaseClient;
-  private readonly userId = "29ec51b9-405e-410e-9188-99f40ca7ff46"; // TODO remplacer par auth.uid()
+  private readonly userId = "198d9175-e554-4fc9-8b33-b0fb009415b6"; // TODO remplacer par auth.uid()
 
   private constructor() {
     this.client = createClient(
@@ -23,9 +23,21 @@ export class SyncManager {
 
   public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<SyncResult<T>> {
     obj.synced = true;
-    obj.updated_at = new Date().toISOString();
 
-    return await this.sync<T>(obj, type);
+    const res = await this.client.from('backup').insert({
+      user_id: this.userId,
+      object_id: obj.id,
+      object_type: type,
+      content: obj,
+      updated_at: obj.updated_at,
+    });
+
+    if (res.error != null) {
+      obj.synced = false;
+      console.log({msg: res.statusText, error: res.error});
+    } else await this.setSynced(obj, type, true)
+
+    return {data: obj, error: res.error};
   }
 
   public async delete(id: string, type: keyof typeof db): Promise<PostgrestError | null> {
@@ -56,7 +68,6 @@ export class SyncManager {
 
   public async sync<T extends Syncable>(obj: T, type: keyof typeof db): Promise<SyncResult<T>> {
     const local: Backup<T> = {
-      id: null,
       user_id: this.userId,
       object_id: obj.id,
       object_type: type,
@@ -71,49 +82,104 @@ export class SyncManager {
         .eq('object_id', obj.id)
         .eq('object_type', type)
         .eq('user_id', this.userId)
-        .single<Backup<T>>()
+        .maybeSingle<Backup<T>>()
     ).data;
 
     let merged: Backup<T>;
     // TODO add CRDT
     if (ref != null) {
-      merged = ref.updated_at < local.updated_at ? local : ref;
-    } else {
+      if (ref.updated_at < local.updated_at) { // local won
+        merged = local;
+        merged.updated_at = new Date().toISOString();
+        merged.content.updated_at = merged.updated_at;
+      } else { // remote won
+        merged = ref;
+      }
+    } else { // no remote
       merged = local;
+      merged.updated_at = new Date().toISOString();
+      merged.content.updated_at = merged.updated_at;
     }
 
-    // FIXME set updated_at only on object changes
-    merged.updated_at = new Date().toISOString();
     merged.content.synced = true;
-    merged.content.updated_at = merged.updated_at;
 
     const res = await this.client
       .from('backup')
       .upsert<Backup<T>>(merged, {
         onConflict: 'user_id,object_type,object_id',
       })
-      .single();
+      .maybeSingle();
 
-    if (!res.error) await (db as any)[type].put(merged.content);
-    else merged.content.synced = false;
+    if (res.error != null) {
+      merged.content.synced = false;
+      console.log({msg: res.statusText, error: res.error});
+    } else await this.setSynced(merged.content, type, true);
 
     return { data: merged.content, error: res.error };
   }
 
-  public async syncPendingFromTable<T extends Syncable>(type: keyof typeof db): Promise<T[]> {
-    const table = (db as any)[type] as Dexie.Table<T, any>;
-    const unsynced = await table.where({ synced: false }).toArray();
-    return this.syncMultiples<T>(unsynced, type)
+  public async syncPendingFromTable<T extends Syncable>(type: keyof typeof db): Promise<void> {
+    const table = (db as any)[type] as Dexie.Table<T, T>;
+    const unsynced = await table.filter((obj) => !obj.synced).toArray();
+    await this.syncMultiples<T>(unsynced, type)
   }
 
-  public async syncMultiples<T extends Syncable>(objs: T[], type: keyof typeof db): Promise<T[]> {
-    const res: T[] = new Array<T>();
+  public async syncMultiples<T extends Syncable>(objs: T[], type: keyof typeof db): Promise<void> {
     for (const entity of objs) {
-      let { error } = await this.sync<T>(entity, type);
-      if (error) return res;
-      res.push(entity);
+      await this.sync<T>(entity, type);
     }
+  }
+
+  public async pullFromRemote<T extends Syncable>(type: keyof typeof db): Promise<T[]> {
+    const table = (db as any)[type] as Dexie.Table<T, string>;
+
+    const { data: remotes, error } = await this.client
+      .from('backup')
+      .select('*')
+      .eq('user_id', this.userId)
+      .eq('object_type', type);
+
+    if (error) {
+      console.error(`[Pull] Erreur récupération remote pour ${type}:`, error.message);
+      return [];
+    }
+    if (!remotes || remotes.length === 0) return [];
+
+    const locals = await table.toArray();
+    const localMap = new Map<string, T>(
+      locals.map((obj: T) => [obj.id, obj])
+    );
+    const res: T[] = new Array<T>();
+
+    for (const remote of remotes as Backup<T>[]) {
+      const local = localMap.get(remote.object_id);
+
+      let latest: T;
+      if (!local) { // not in local
+        latest = {
+          ...remote.content,
+          synced: true,
+          updated_at: remote.updated_at,
+        }
+      } else if (local.updated_at < remote.updated_at) { // local older than remote
+        latest = {
+          ...remote.content,
+          synced: true,
+          updated_at: remote.updated_at,
+        }
+      } else continue;
+
+      await table.put(latest);
+      res.push(latest);
+    }
+
     return res;
+  }
+
+  private async setSynced<T extends Syncable>(obj: T, type: keyof typeof db, state: boolean): Promise<void> {
+    obj.synced = state;
+    const res: number = await (db as any)[type].update(obj.id, obj);
+    console.log({rowsUpdated: res, update: obj})
   }
 }
 
@@ -123,7 +189,7 @@ export interface SyncResult<T extends Syncable> {
 }
 
 interface Backup<T extends Syncable> {
-  id: string | null;
+  id?: string;
   user_id: string;
   object_id: string;
   object_type: string;

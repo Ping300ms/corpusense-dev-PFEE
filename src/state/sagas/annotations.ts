@@ -386,8 +386,8 @@ function* handleFetchAnnotations(
 ): Generator<Effect, void, Annotation[]> {
   const { collectionId, canvasId } = action.payload;
 
-  // const syncManager: SyncManager = SyncManager.getInstance();
-  // yield call([syncManager, syncManager.syncPendingFromTable<Annotation>], 'annotations');
+  const syncManager: SyncManager = SyncManager.getInstance();
+  yield call([syncManager, syncManager.pullFromRemote<Annotation>], 'annotations');
 
   const annotationRepository = getAnnotationRepository();
   const annotations = yield call([annotationRepository, annotationRepository.getByScope], {

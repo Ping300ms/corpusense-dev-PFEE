@@ -10,6 +10,7 @@ import ModelsManagerPage from './pages/ModelsManagerPage';
 import StoragePage from './pages/StoragePage';
 import WorkersManagerPage from './pages/WorkersManagerPage';
 import { ImporterPlugin, loadImporterPlugins } from './state/sagas/plugins/loader';
+import TestPage from '@/pages/TestPage.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/';
@@ -41,6 +42,8 @@ function App() {
           <Route path={CorpusenseRoutes.STORAGE} element={<StoragePage />} />
           <Route path={CorpusenseRoutes.WORKERS} element={<WorkersManagerPage />} />
           <Route path={`${CorpusenseRoutes.WORKERS}/:workerId`} element={<WorkersManagerPage />} />
+
+          <Route path={`test`} element={<TestPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
