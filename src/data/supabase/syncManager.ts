@@ -1,19 +1,16 @@
-import { createClient, SupabaseClient, PostgrestError } from '@supabase/supabase-js';
+import { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import { Syncable } from '@/data/models/Syncable.ts';
 import { db } from '@/data/repositories/indexeddb/db.ts';
 import Dexie from 'dexie';
+import { supabase } from '@/data/supabase/supabaseClient.ts';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
 
   private readonly client: SupabaseClient;
-  private readonly userId = "198d9175-e554-4fc9-8b33-b0fb009415b6"; // TODO remplacer par auth.uid()
 
   private constructor() {
-    this.client = createClient(
-      import.meta.env.VITE_SUPABASE_URL as string,
-      import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-    );
+    this.client = supabase;
   }
 
   public static getInstance(): SyncManager {
@@ -21,11 +18,17 @@ export class SyncManager {
     return SyncManager.instance;
   }
 
-  public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<SyncResult<T>> {
+  public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<SyncResult<T> | { error: string }> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[CREATE] Sync: error not logged in`);
+      return { error: `[CREATE] Sync: error not logged in`};
+    }
+
     obj.synced = true;
 
     const res = await this.client.from('backup').insert({
-      user_id: this.userId,
+      user_id: user.id,
       object_id: obj.id,
       object_type: type,
       content: obj,
@@ -40,35 +43,53 @@ export class SyncManager {
     return {data: obj, error: res.error};
   }
 
-  public async delete(id: string, type: keyof typeof db): Promise<PostgrestError | null> {
+  public async delete(id: string, type: keyof typeof db): Promise<{ error: string } | null> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[DELETE] Sync: error not logged in`);
+      return { error: `[DELETE] Sync: error not logged in`};
+    }
+
     const { error } = await this.client
       .from('backup')
       .delete()
       .match({
-        user_id: this.userId,
+        user_id: user.id,
         object_type: type,
         object_id: id,
       });
 
-    return error;
+    return error == null ? error : { error: error.message };
   }
 
-  public async deleteByIds(ids: string[], type: keyof typeof db): Promise<PostgrestError | null> {
+  public async deleteByIds(ids: string[], type: keyof typeof db): Promise<{ error: string } | null> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[DELETE] Sync: error not logged in`);
+      return { error: `[DELETE] Sync: error not logged in`};
+    }
+
     const { error } = await this.client
       .from('backup')
       .delete()
       .match({
-        user_id: this.userId,
+        user_id: user.id,
         object_type: type,
       })
       .in('object_id', ids);
 
-    return error;
+    return error == null ? error : { error: error.message };
   }
 
-  public async sync<T extends Syncable>(obj: T, type: keyof typeof db): Promise<SyncResult<T>> {
+  public async sync<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[UPDATE] Sync: error not logged in`);
+      return { error: `[UPDATE] Sync: error not logged in`};
+    }
+
     const local: Backup<T> = {
-      user_id: this.userId,
+      user_id: user.id,
       object_id: obj.id,
       object_type: type,
       content: obj,
@@ -81,7 +102,7 @@ export class SyncManager {
         .select('*')
         .eq('object_id', obj.id)
         .eq('object_type', type)
-        .eq('user_id', this.userId)
+        .eq('user_id', user.id)
         .maybeSingle<Backup<T>>()
     ).data;
 
@@ -113,30 +134,52 @@ export class SyncManager {
     if (res.error != null) {
       merged.content.synced = false;
       console.log({msg: res.statusText, error: res.error});
-    } else await this.setSynced(merged.content, type, true);
+      return { error: res.error.message };
+    }
+    await this.setSynced(merged.content, type, true);
 
-    return { data: merged.content, error: res.error };
+    return merged.content;
   }
 
   public async syncPendingFromTable<T extends Syncable>(type: keyof typeof db): Promise<void> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[UPDATE] Sync: error not logged in`);
+      return;
+    }
+
     const table = (db as any)[type] as Dexie.Table<T, T>;
     const unsynced = await table.filter((obj) => !obj.synced).toArray();
-    await this.syncMultiples<T>(unsynced, type)
+    for (const entity of unsynced) {
+      await this.sync<T>(entity, type);
+    }
   }
 
   public async syncMultiples<T extends Syncable>(objs: T[], type: keyof typeof db): Promise<void> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[UPDATE] Sync: error not logged in`);
+      return;
+    }
+
     for (const entity of objs) {
       await this.sync<T>(entity, type);
     }
   }
 
-  public async pullFromRemote<T extends Syncable>(type: keyof typeof db): Promise<T[]> {
+  public async pullFromRemote<T extends Syncable>(type: keyof typeof db): Promise<T[] | { error: string }> {
+    const { user } = (await supabase.auth.getUser()).data;
+    if (!user) {
+      console.log(`[SELECT] Sync: error not logged in`);
+      return { error: `[SELECT] Sync: error not logged in`};
+    }
+
     const table = (db as any)[type] as Dexie.Table<T, string>;
 
     const { data: remotes, error } = await this.client
       .from('backup')
       .select('*')
-      .eq('user_id', this.userId)
+      .eq('user_id', user.id)
       .eq('object_type', type);
 
     if (error) {
