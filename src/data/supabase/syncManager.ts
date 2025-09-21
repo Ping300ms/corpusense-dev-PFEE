@@ -44,22 +44,7 @@ export class SyncManager {
   }
 
   public async delete(id: string, type: keyof typeof db): Promise<{ error: string } | null> {
-    const { user } = (await supabase.auth.getUser()).data;
-    if (!user) {
-      console.log(`[DELETE] Sync: error not logged in`);
-      return { error: `[DELETE] Sync: error not logged in`};
-    }
-
-    const { error } = await this.client
-      .from('backup')
-      .delete()
-      .match({
-        user_id: user.id,
-        object_type: type,
-        object_id: id,
-      });
-
-    return error == null ? error : { error: error.message };
+    return this.deleteByIds([id], type);
   }
 
   public async deleteByIds(ids: string[], type: keyof typeof db): Promise<{ error: string } | null> {
@@ -69,9 +54,10 @@ export class SyncManager {
       return { error: `[DELETE] Sync: error not logged in`};
     }
 
+    const deletion_date = new Date().toISOString();
     const { error } = await this.client
       .from('backup')
-      .delete()
+      .update({ deleted_at: deletion_date, updated_at: deletion_date }) // soft delete
       .match({
         user_id: user.id,
         object_type: type,
@@ -94,6 +80,7 @@ export class SyncManager {
       object_type: type,
       content: obj,
       updated_at: obj.updated_at,
+      deleted_at: null,
     };
 
     const ref = (
@@ -107,14 +94,14 @@ export class SyncManager {
     ).data;
 
     let merged: Backup<T>;
-    // TODO add CRDT
+    // TODO add real CRDT
     if (ref != null) {
-      if (ref.updated_at < local.updated_at) { // local won
+      if (ref.updated_at < local.updated_at) { // local win
         merged = local;
         merged.updated_at = new Date().toISOString();
         merged.content.updated_at = merged.updated_at;
-      } else { // remote won
-        merged = ref;
+      } else { // remote win
+        merged = ref; // TODO avoid updating remote with remote
       }
     } else { // no remote
       merged = local;
@@ -151,7 +138,7 @@ export class SyncManager {
     const table = (db as any)[type] as Dexie.Table<T, T>;
     const unsynced = await table.filter((obj) => !obj.synced).toArray();
     for (const entity of unsynced) {
-      await this.sync<T>(entity, type);
+      await this.sync<T>(entity, type); // TODO optimize request numbers
     }
   }
 
@@ -167,6 +154,7 @@ export class SyncManager {
     }
   }
 
+  // TODO stock in local last pull date to filter already synced data
   public async pullFromRemote<T extends Syncable>(type: keyof typeof db): Promise<T[] | { error: string }> {
     const { user } = (await supabase.auth.getUser()).data;
     if (!user) {
@@ -181,6 +169,7 @@ export class SyncManager {
       .select('*')
       .eq('user_id', user.id)
       .eq('object_type', type);
+      // TODO .gt('updated_at', ...)
 
     if (error) {
       console.error(`[Pull] Erreur récupération remote pour ${type}:`, error.message);
@@ -197,14 +186,23 @@ export class SyncManager {
     for (const remote of remotes as Backup<T>[]) {
       const local = localMap.get(remote.object_id);
 
+      if (!local && remote.deleted_at != null) continue;
+
       let latest: T;
       if (!local) { // not in local
+        console.log("salut");
         latest = {
           ...remote.content,
           synced: true,
           updated_at: remote.updated_at,
         }
-      } else if (local.updated_at < remote.updated_at) { // local older than remote
+      } else if (new Date(local.updated_at) < new Date(remote.updated_at)) { // local older than remote
+        console.log("test");
+        if (remote.deleted_at != null) { // remote has been deleted
+          await table.delete(local.id);
+          continue
+        }
+
         latest = {
           ...remote.content,
           synced: true,
@@ -238,4 +236,5 @@ interface Backup<T extends Syncable> {
   object_type: string;
   content: T;
   updated_at: string;
+  deleted_at: string | null;
 }
