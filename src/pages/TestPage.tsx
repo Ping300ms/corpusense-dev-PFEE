@@ -73,12 +73,12 @@ const TestPage = () => {
   };
 
   const handleSyncPending = async (type: keyof typeof db) => {
-    await sync.syncPendingFromTable(type);
+    await sync.pushPending(type);
     await loadData();
   };
 
   const handlePull = async (type: keyof typeof db) => {
-    await sync.pullFromRemote(type);
+    await sync.pullUpdates(type);
     await loadData();
   };
 

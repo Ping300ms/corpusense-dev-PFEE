@@ -46,7 +46,7 @@ function* fetchAllCollections(): Generator<
 > {
   try {
     const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.pullFromRemote<CollectionDetails>], 'collections');
+    yield call([syncManager, syncManager.pullUpdates<CollectionDetails>], 'collections');
 
     const collectionRepository = getCollectionRepository();
     const collections: CollectionDetails[] = yield call([
@@ -96,7 +96,7 @@ function* handleUpdateCollection(action: PayloadAction<Collection>) {
     yield put(pushInfo(i18n.t('toast_collection_saved')));
 
     const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.sync<CollectionDetails>], action.payload, 'collections');
+    yield call([syncManager, syncManager.push<CollectionDetails>], action.payload, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -255,8 +255,8 @@ function* handleRemoveElementFromCollection(
     yield put(pushInfo(i18n.t('toast_element_removed')));
 
     const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.sync<CollectionDetails>], updatedCollection, 'collections');
-    yield call([syncManager, syncManager.sync<CollectionContent>], updatedCollection, 'collectionContents');
+    yield call([syncManager, syncManager.push<CollectionDetails>], updatedCollection, 'collections');
+    yield call([syncManager, syncManager.push<CollectionContent>], updatedCollection, 'collectionContents');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }

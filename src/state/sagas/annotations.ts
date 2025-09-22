@@ -97,7 +97,7 @@ function* handleUpdateAnnotation(
       yield put(pushInfo(i18n.t('toast_annotation_saved')));
 
       const syncManager: SyncManager = SyncManager.getInstance();
-      yield call([syncManager, syncManager.sync<Annotation>], annotationToSave, 'annotations');
+      yield call([syncManager, syncManager.push<Annotation>], annotationToSave, 'annotations');
     }
   } catch (e) {
     console.warn(e);
@@ -192,7 +192,7 @@ function* handleUpdateAnnotationOrder(
     yield put(saveAnnotationsSuccess(updatedAnnotations));
 
     const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.syncMultiples<Annotation>], updatedAnnotations, 'annotations');
+    yield call([syncManager, syncManager.pushMultiples<Annotation>], updatedAnnotations, 'annotations');
   } catch (error) {
     console.warn(error);
   }
@@ -387,7 +387,7 @@ function* handleFetchAnnotations(
   const { collectionId, canvasId } = action.payload;
 
   const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.pullFromRemote<Annotation>], 'annotations');
+  yield call([syncManager, syncManager.pullUpdates<Annotation>], 'annotations');
 
   const annotationRepository = getAnnotationRepository();
   const annotations = yield call([annotationRepository, annotationRepository.getByScope], {

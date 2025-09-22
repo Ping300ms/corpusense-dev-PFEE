@@ -22,7 +22,7 @@ import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 function* fetchModels(): Generator<Effect, void, DataModel[]> {
   const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.pullFromRemote<DataModel>], 'models');
+  yield call([syncManager, syncManager.pullUpdates<DataModel>], 'models');
 
   const modelRespository = getModelRepository();
   const models = yield call([modelRespository, modelRespository.getAll]);
@@ -73,7 +73,7 @@ function* handleSaveModel(action: PayloadAction<DataModel>) {
   yield put(pushInfo(t('info_model_saved')));
 
   const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.sync<DataModel>], action.payload, 'models');
+  yield call([syncManager, syncManager.push<DataModel>], action.payload, 'models');
 }
 
 function* handleRemoveModel(action: PayloadAction<string>) {
