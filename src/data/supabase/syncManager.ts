@@ -1,13 +1,14 @@
 import { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import { Syncable } from '@/data/models/Syncable.ts';
 import { db } from '@/data/repositories/indexeddb/db.ts';
-import Dexie from 'dexie';
+import { EntityTable } from 'dexie';
 import { supabase } from '@/data/supabase/supabaseClient.ts';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
 
   private readonly client: SupabaseClient;
+  private lastPull: Date | null = null; // TODO stock and retrieve in indexeddb
 
   private constructor() {
     this.client = supabase;
@@ -94,7 +95,7 @@ export class SyncManager {
     ).data;
 
     let merged: Backup<T>;
-    // TODO add real CRDT
+    // TODO use CRDT
     if (ref != null) {
       if (ref.updated_at < local.updated_at) { // local win
         merged = local;
@@ -135,10 +136,10 @@ export class SyncManager {
       return;
     }
 
-    const table = (db as any)[type] as Dexie.Table<T, T>;
+    const table = db[type] as unknown as EntityTable<T, 'id'>;
     const unsynced = await table.filter((obj) => !obj.synced).toArray();
     for (const entity of unsynced) {
-      await this.sync<T>(entity, type); // TODO optimize request numbers
+      await this.sync<T>(entity, type); // TODO optimize request number
     }
   }
 
@@ -154,7 +155,6 @@ export class SyncManager {
     }
   }
 
-  // TODO stock in local last pull date to filter already synced data
   public async pullFromRemote<T extends Syncable>(type: keyof typeof db): Promise<T[] | { error: string }> {
     const { user } = (await supabase.auth.getUser()).data;
     if (!user) {
@@ -162,22 +162,26 @@ export class SyncManager {
       return { error: `[SELECT] Sync: error not logged in`};
     }
 
-    const table = (db as any)[type] as Dexie.Table<T, string>;
+    const table = db[type] as unknown as EntityTable<T, 'id'>;
 
     const { data: remotes, error } = await this.client
       .from('backup')
       .select('*')
       .eq('user_id', user.id)
-      .eq('object_type', type);
-      // TODO .gt('updated_at', ...)
+      .eq('object_type', type)
+      .gt('updated_at', this.lastPull?.toISOString() ?? "2025-01-01 00:00:00.000+00");
 
     if (error) {
       console.error(`[Pull] Erreur récupération remote pour ${type}:`, error.message);
       return [];
     }
-    if (!remotes || remotes.length === 0) return [];
 
-    const locals = await table.toArray();
+    this.lastPull = new Date();
+    if (remotes == null || remotes.length === 0) return [];
+
+    console.log(remotes);
+
+    const locals = await table.toArray(); // TODO optimize request
     const localMap = new Map<string, T>(
       locals.map((obj: T) => [obj.id, obj])
     );
@@ -186,19 +190,19 @@ export class SyncManager {
     for (const remote of remotes as Backup<T>[]) {
       const local = localMap.get(remote.object_id);
 
-      if (!local && remote.deleted_at != null) continue;
+      if (!local && remote.deleted_at != null) continue; // remote created and deleted before pull
 
+      // TODO use CRDT (maybe facto with sync)
       let latest: T;
       if (!local) { // not in local
-        console.log("salut");
         latest = {
           ...remote.content,
           synced: true,
           updated_at: remote.updated_at,
         }
       } else if (new Date(local.updated_at) < new Date(remote.updated_at)) { // local older than remote
-        console.log("test");
         if (remote.deleted_at != null) { // remote has been deleted
+          // @ts-expect-error weird type cast, but it works
           await table.delete(local.id);
           continue
         }
@@ -219,7 +223,8 @@ export class SyncManager {
 
   private async setSynced<T extends Syncable>(obj: T, type: keyof typeof db, state: boolean): Promise<void> {
     obj.synced = state;
-    const res: number = await (db as any)[type].update(obj.id, obj);
+    // @ts-expect-error weird type cast, but it works
+    const res: number = await (db[type] as unknown as EntityTable<T, 'id'>).update(obj.id, obj);
     console.log({rowsUpdated: res, update: obj})
   }
 }
