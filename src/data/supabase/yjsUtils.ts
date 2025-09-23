@@ -21,10 +21,9 @@ export function syncableToUint8<T extends Syncable>(obj: T): Uint8Array {
 /**
  * Convert CRDT → Syncable
  */
-export function uint8ToSyncable<T extends Syncable>(update: Uint8Array | string): T {
-  const arr = typeof update === "string" ? hexStringToUint8Array(update) : update;
+export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
   const doc = new Y.Doc();
-  Y.applyUpdate(doc, arr);
+  Y.applyUpdate(doc, update);
 
   const map = doc.getMap<any>("content");
   const obj: any = {};
@@ -59,10 +58,10 @@ export function mergeUint8(local: Uint8Array, remote: Uint8Array): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-function hexStringToUint8Array(hex: string): Uint8Array {
-  if (hex.startsWith("\\x")) hex = hex.slice(2);
-  const len = hex.length / 2;
-  const arr = new Uint8Array(len);
-  for (let i = 0; i < len; i++) arr[i] = parseInt(hex.substr(i*2, 2), 16);
-  return arr;
+export function encodeDocToJSONB(update: Uint8Array): number[] {
+  return Array.from(update);
+}
+
+export function decodeDocFromJSONB(arr: number[]): Uint8Array {
+  return new Uint8Array(arr);
 }

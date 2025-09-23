@@ -3,14 +3,14 @@ import { db } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
 import { supabase } from "@/data/supabase/supabaseClient.ts";
 import { Syncable } from "@/data/models/Syncable.ts";
-import { syncableToUint8, uint8ToSyncable, mergeUint8 } from "./yjsUtils.ts";
+import { syncableToUint8, uint8ToSyncable, mergeUint8, encodeDocToJSONB, decodeDocFromJSONB } from './yjsUtils.ts';
 
 interface Backup {
   id?: string;
   user_id: string;
   object_id: string;
   object_type: string;
-  content: Uint8Array;
+  content: number[];
   updated_at: string;
   deleted_at: string | null;
 }
@@ -37,12 +37,13 @@ export class SyncManager {
 
     const update = syncableToUint8(obj);
 
-    const { error } = await this.client.from('backup').insert({
+    const { error } = await this.client.from('backup').insert<Backup>({
       user_id: user.id,
       object_id: obj.id,
       object_type: type,
-      content: update,
+      content: encodeDocToJSONB(update),
       updated_at: obj.updated_at,
+      deleted_at: null,
     });
 
     if (error) return { error: `[CREATE] Sync: error inserting into supabase ${type} ${obj.id} ${error.message}` };
@@ -86,7 +87,7 @@ export class SyncManager {
     if (error) return { error: `[PUSH] Sync: error pulling from supabase ${type} ${obj.id} ${error.message}` };
 
     let mergedUpdate = localUpdate;
-    if (remote?.content) mergedUpdate = mergeUint8(localUpdate, remote.content);
+    if (remote?.content != null) mergedUpdate = mergeUint8(localUpdate, decodeDocFromJSONB(remote.content));
 
     const mergedObj = uint8ToSyncable<T>(mergedUpdate);
     mergedObj.updated_at = new Date().toISOString();
@@ -97,7 +98,7 @@ export class SyncManager {
         user_id: user.id,
         object_id: obj.id,
         object_type: type,
-        content: mergedUpdate,
+        content: encodeDocToJSONB(mergedUpdate),
         updated_at: mergedObj.updated_at,
         deleted_at: remote?.deleted_at ?? null,
       },
@@ -157,9 +158,7 @@ export class SyncManager {
       }
 
       const local = localMap.get(remote.object_id);
-      const mergedObj = uint8ToSyncable<T>(remote.content);
-
-      console.log(mergedObj);
+      const mergedObj = uint8ToSyncable<T>(decodeDocFromJSONB(remote.content));
 
       if (!local || new Date(local.updated_at) < new Date(remote.updated_at)) {
         mergedObj.synced = true;
