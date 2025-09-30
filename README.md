@@ -10,7 +10,7 @@ Il s'agit du dépôt principal de CorpuSense. Composé de 3 branches :
 - develop : branche destinée à recevoir les PR des forks du dépôt
 - gh-pages : branche contenant le build de l'application (généré automatiquement lors d'un push sur la branche develop)
 
-### <https://github.com/mezanno/corpusense-dev>
+### <https://github.com/Ping300ms/corpusense-dev-PFEE>
 
 Il s'agit d'un fork. Composé de 2 branches :
 
@@ -31,4 +31,13 @@ Cette structure nous permet d'avoir en ligne 2 builds :
 - Tailwind CSS (framework CSS): https://tailwindcss.com/
 - Dexie (wrapper pour IndexedDB): https://dexie.org/
 - Annotorious + OpenSeaDragon (affichage d'images IIIF + annotation d'images) : https://annotorious.dev/
--
+- Supabase : https://supabase.io/
+- Yjs : https://yjs.dev/
+
+## Prérequis
+- node.js (version LTS moderne)
+- npm
+
+## Installation
+- npm install
+- npm run dev
