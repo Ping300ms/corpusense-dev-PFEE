@@ -1,7 +1,7 @@
 import { SupabaseClient, User } from '@supabase/supabase-js';
 import { db } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
-import { supabase } from "@/data/supabase/supabaseClient.ts";
+import { supabase } from "@/data/repositories/supabase/supabaseClient.ts";
 import { Syncable } from "@/data/models/Syncable.ts";
 import { syncableToUint8, uint8ToSyncable, mergeUint8, encodeDocToJSONB, decodeDocFromJSONB } from './yjsUtils.ts';
 
