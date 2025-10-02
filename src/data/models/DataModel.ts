@@ -1,4 +1,6 @@
-export interface DataField {
+import { Syncable } from '@/data/models/Syncable.ts';
+
+export interface DataField extends Syncable {
   id: string;
   name: string;
   type: string;
@@ -8,7 +10,7 @@ export interface DataField {
   color: string;
 }
 
-export interface DataModel {
+export interface DataModel extends Syncable {
   id: string;
   name: string;
   description?: string;

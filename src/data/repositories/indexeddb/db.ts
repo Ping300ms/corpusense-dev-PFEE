@@ -26,16 +26,16 @@ const db = new Dexie('mezanno') as Dexie & {
 };
 
 db.version(1).stores({
-  collections: '&id, name, *tags.id',
-  collectionContents: '&id',
+  collections: '&id, name, *tags.id, synced',
+  collectionContents: '&id, synced',
   history: '&url',
   storedManifests: '&id, name',
   storedManifestContents: '&id',
   typesList: '&label',
   itemMetadata: '[id+attribute.label]',
   tags: '&id',
-  models: '&id, name',
-  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order',
+  models: '&id, name, synced',
+  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order, synced',
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',

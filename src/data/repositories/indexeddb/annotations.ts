@@ -65,7 +65,7 @@ export class IndexedDBAnnotationRepository implements AnnotationRepository {
       );
 
       for (const annotation of annotationsByType[elementType]!) {
-        newAnnotations.push({ ...annotation, order: lastOrder });
+        newAnnotations.push({ ...annotation, order: lastOrder, updated_at: new Date().toISOString(), synced: false });
         lastOrder++;
       }
     }

@@ -95,6 +95,8 @@ export class IndexedDBCollectionRepository implements CollectionRepository {
       await db.collectionContents.add({
         id: collection.id,
         content: content ?? [],
+        updated_at: new Date().toISOString(),
+        synced: false
       });
     });
   }
@@ -133,6 +135,8 @@ export class IndexedDBCollectionRepository implements CollectionRepository {
       await db.collectionContents.put({
         id: collection.id,
         content: collection.content,
+        updated_at: new Date().toISOString(),
+        synced: false
       });
     });
   }
