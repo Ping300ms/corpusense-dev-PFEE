@@ -36,7 +36,7 @@ import {
 } from '../reducers/annotations';
 import { pushError, pushInfo } from '../reducers/events';
 import { selectCurrentScope } from '../selectors/annotations';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
+import { SyncManager } from '@/data/repositories/supabase/syncManager.ts';
 
 /**
  * Saga to handle saving an annotation.

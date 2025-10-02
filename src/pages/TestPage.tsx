@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Trash2 } from "lucide-react";
 import { db } from "@/data/repositories/indexeddb/db";
 import { v4 as uuidv4 } from 'uuid';
-import { SyncManager } from '@/data/supabase/syncManager';
+import { SyncManager } from '@/data/repositories/supabase/syncManager';
 import { Collection, CollectionDetails } from '@/data/models/Collection';
 import { DataModel } from '@/data/models/DataModel';
 import { Annotation } from '@/data/models/Annotation';

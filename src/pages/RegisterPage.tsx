@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from '@/data/supabase/supabaseClient.ts';
+import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';

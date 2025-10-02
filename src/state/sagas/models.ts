@@ -18,7 +18,7 @@ import {
   saveModelSuccess,
   setModels,
 } from '../reducers/models';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
+import { SyncManager } from '@/data/repositories/supabase/syncManager.ts';
 
 function* fetchModels(): Generator<Effect, void, DataModel[]> {
   const syncManager: SyncManager = SyncManager.getInstance();

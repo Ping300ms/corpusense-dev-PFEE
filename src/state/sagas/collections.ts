@@ -37,7 +37,7 @@ import {
 import { pushError, pushInfo } from '../reducers/events';
 import { removeWorkersSuccess } from '../reducers/workers';
 import { fetchManifestFromURL } from './manifests';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
+import { SyncManager } from '@/data/repositories/supabase/syncManager.ts';
 
 function* fetchAllCollections(): Generator<
   CallEffect<CollectionDetails[]> | PutEffect,
