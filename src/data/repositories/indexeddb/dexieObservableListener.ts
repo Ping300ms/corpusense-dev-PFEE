@@ -7,16 +7,16 @@ import {
 import { db } from '@/data/repositories/indexeddb/db.ts';
 import { SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
 
-export interface OnChangeCallbacks {
+export interface OnLocalChangeCallbacks {
   onAdd?: (entity: SyncableObject, table: string) => void | Promise<void>;
   onUpdate?: (entity: SyncableObject, table: string) => void | Promise<void>;
   onDelete?: (entity: SyncableObject, table: string) => void | Promise<void>;
 }
 
-export class DexieObservableProvider {
-  private callbacks: OnChangeCallbacks;
+export class DexieObservableListener {
+  private callbacks: OnLocalChangeCallbacks;
 
-  constructor(callbacks: OnChangeCallbacks) {
+  constructor(callbacks: OnLocalChangeCallbacks) {
     this.callbacks = callbacks;
 
     db.on('changes', (changes) => {

@@ -4,16 +4,7 @@ import { EntityTable } from "dexie";
 import { supabase } from "@/data/repositories/supabase/supabaseClient.ts";
 import { Syncable } from "@/data/models/Syncable.ts";
 import { syncableToUint8, uint8ToSyncable, mergeUint8, encodeDocToJSONB, decodeDocFromJSONB } from './yjsUtils.ts';
-
-interface Backup {
-  id?: string;
-  user_id: string;
-  object_id: string;
-  object_type: string;
-  content: number[];
-  updated_at: string;
-  deleted_at: string | null;
-}
+import Backup from '@/data/models/Backup.ts';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
