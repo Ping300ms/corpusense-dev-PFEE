@@ -1,3 +1,4 @@
+/* eslint-disable */
 import {
   REALTIME_SUBSCRIBE_STATES,
   RealtimeChannel,
@@ -13,7 +14,7 @@ export interface OnRemoteChangeCallbacks<T> {
   onDelete?: (entity: Partial<T>) => void | Promise<void>;
 }
 
-export class SupabaseRealtimeListener<T extends { [key: string]: never; }> {
+export class SupabaseRealtimeListener<T extends Record<string, any>> {
   private supabase: SupabaseClient;
   private callbacks: OnRemoteChangeCallbacks<T>;
   private userId: string;
@@ -27,7 +28,7 @@ export class SupabaseRealtimeListener<T extends { [key: string]: never; }> {
     this.connect();
   }
 
-  private connect() {
+  public connect() {
     if (this.channel) return;
 
     // Maybe split into multiple channels ?

@@ -1,4 +1,4 @@
-/* eslint-disable */ // shut c'est magic
+/* eslint-disable */
 import * as Y from "yjs";
 import { Syncable } from "@/data/models/Syncable.ts";
 
@@ -32,10 +32,7 @@ export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
     obj[k] = v;
   });
   
-  const res = obj as T;
-  res.synced = true;
-  
-  return res;
+  return obj as T;
 }
 
 /**

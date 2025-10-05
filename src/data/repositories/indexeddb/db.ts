@@ -9,6 +9,7 @@ import { StoredManifestContent, StoredManifestDetails } from '@/data/models/Stor
 import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
 import Dexie, { type EntityTable } from 'dexie';
+import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 
 const db = new Dexie('mezanno') as Dexie & {
   collections: EntityTable<CollectionDetails, 'id'>;
@@ -23,6 +24,7 @@ const db = new Dexie('mezanno') as Dexie & {
   namedEntities: EntityTable<NamedEntity, 'id'>;
   results: EntityTable<Result, 'id'>;
   workers: EntityTable<Worker, 'id'>;
+  syncPendingOperations: EntityTable<SyncPendingOperations, 'id'>;
 };
 
 db.version(1).stores({
@@ -39,6 +41,7 @@ db.version(1).stores({
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',
+  syncPendingOperations: '&id, type, table, object_id',
 });
 
 // db.version(33)
