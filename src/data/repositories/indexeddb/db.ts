@@ -8,6 +8,7 @@ import { Result } from '@/data/models/Result';
 import { StoredManifestContent, StoredManifestDetails } from '@/data/models/StoredManifest';
 import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
+import 'dexie-observable';
 import Dexie, { type EntityTable } from 'dexie';
 import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 
@@ -41,7 +42,7 @@ db.version(1).stores({
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',
-  syncPendingOperations: '&id, type, table, object_id',
+  syncPendingOperations: '&id, type, table, object_id, date',
 });
 
 // db.version(33)

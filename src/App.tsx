@@ -10,7 +10,11 @@ import ModelsManagerPage from './pages/ModelsManagerPage';
 import StoragePage from './pages/StoragePage';
 import WorkersManagerPage from './pages/WorkersManagerPage';
 import { ImporterPlugin, loadImporterPlugins } from './state/sagas/plugins/loader';
-import TestPage from '@/pages/TestPage.tsx';
+import HomePage from '@/pages/demo/HomePage.tsx';
+import EditAnnotationPage from '@/pages/demo/EditAnnotationPage.tsx';
+import EditDataModelPage from '@/pages/demo/EditDataModelPage.tsx';
+import EditCollectionPage from '@/pages/demo/EditCollectionPage.tsx';
+import EditCollectionContentPage from '@/pages/demo/EditCollectionContentPage.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/';
@@ -43,7 +47,11 @@ function App() {
           <Route path={CorpusenseRoutes.WORKERS} element={<WorkersManagerPage />} />
           <Route path={`${CorpusenseRoutes.WORKERS}/:workerId`} element={<WorkersManagerPage />} />
 
-          <Route path={`test`} element={<TestPage />} />
+          <Route path={`test`} element={<HomePage />} />
+          <Route path="test/annotation/:id?" element={<EditAnnotationPage />} />
+          <Route path="test/model/:id?" element={<EditDataModelPage />} />
+          <Route path="test/collection/:id?" element={<EditCollectionPage />} />
+          <Route path="test/collection-content/:id?" element={<EditCollectionContentPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

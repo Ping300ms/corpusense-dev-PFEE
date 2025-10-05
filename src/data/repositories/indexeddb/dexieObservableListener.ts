@@ -1,4 +1,3 @@
-import 'dexie-observable';
 import {
   ICreateChange,
   IDeleteChange,

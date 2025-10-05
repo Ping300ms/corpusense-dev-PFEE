@@ -11,7 +11,7 @@ import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseR
 export class SyncManager {
   private static instance: SyncManager | null = null;
 
-  private readonly client: SupabaseClient;
+  public readonly client: SupabaseClient;
   private lastPull: Date;
 
   private dexieListener: DexieObservableListener | null = null;
@@ -31,8 +31,8 @@ export class SyncManager {
   }
 
   private async initializeListeners() {
-    window.addEventListener('online', this.handleOnline);
-    window.addEventListener('offline', this.handleOffline);
+    window.addEventListener('online', this.InitSync);
+    window.addEventListener('offline', this.CloseSync);
 
     const user = await this.getUser();
     if (!user) return;
@@ -282,13 +282,13 @@ export class SyncManager {
     await table.delete(object_id);
   }
 
-  private handleOnline() {
+  public InitSync() {
     this.realtimeListener?.connect();
     SyncableTables.forEach((value) => void this.pullUpdates(value as keyof typeof db));
     void this.pushPendingOperations();
   }
 
-  private handleOffline() {
+  public CloseSync() {
     void this.realtimeListener?.disconnect();
   }
 
@@ -302,7 +302,7 @@ export class SyncManager {
       await this.realtimeListener.destroy();
       this.realtimeListener = null;
     }
-    window.removeEventListener('online', this.handleOnline);
-    window.removeEventListener('offline', this.handleOffline);
+    window.removeEventListener('online', this.InitSync);
+    window.removeEventListener('offline', this.CloseSync);
   }
 }
