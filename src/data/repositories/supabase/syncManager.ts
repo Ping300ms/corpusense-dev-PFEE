@@ -338,8 +338,10 @@ export class SyncManager {
   public async InitSync() {
     await this.realtimeListener?.connect();
     this.connected = true;
-    SyncableTables.forEach((value) => void this.pullUpdates(value as keyof typeof db));
-    void this.pushPendingOperations();
+    for (const table of SyncableTables) {
+      await this.pullUpdates(table as keyof typeof db);
+    }
+    await this.pushPendingOperations();
   }
 
   public async CloseSync() {
@@ -349,7 +351,7 @@ export class SyncManager {
 
   private async getUser(): Promise<User | null> {
     const user = (await supabase.auth.getUser()).data.user;
-    if (user == null && this.connected) await this.InitSync(); // TODO refactor clean spaghetti
+    if (user === null && this.connected) await this.CloseSync(); // TODO refactor clean spaghetti
     if (user !== null && !this.connected) await this.InitSync();
     return user
   }
