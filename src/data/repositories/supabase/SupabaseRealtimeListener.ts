@@ -17,41 +17,41 @@ export interface OnRemoteChangeCallbacks<T> {
 export class SupabaseRealtimeListener<T extends Record<string, any>> {
   private supabase: SupabaseClient;
   private callbacks: OnRemoteChangeCallbacks<T>;
-  private userId: string;
   private channel: RealtimeChannel | null = null;
 
-  constructor(supabase: SupabaseClient, callbacks: OnRemoteChangeCallbacks<T>, userId: string) {
+  constructor(supabase: SupabaseClient, callbacks: OnRemoteChangeCallbacks<T>) {
     this.supabase = supabase;
     this.callbacks = callbacks;
-    this.userId = userId;
 
-    this.connect();
+    void this.connect();
   }
 
-  public connect() {
+  public async connect() {
     if (this.channel) return;
+
+    const user = (await this.supabase.auth.getUser()).data.user;
+    if (user === null) return;
 
     // Maybe split into multiple channels ?
     this.channel = this.supabase.channel('backup-changes');
-    if (this.userId) {}
     this.channel
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'backup' }, // , filter: `user_id=eq.${this.userId}`
+        { event: 'INSERT', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresInsertPayload<T>) => {
           void this.callbacks.onAdd?.(payload.new);
         },
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'backup' },
+        { event: 'UPDATE', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresUpdatePayload<T>) => {
           void this.callbacks.onUpdate?.(payload.new);
         },
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'backup' },
+        { event: 'DELETE', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresDeletePayload<T>) => {
           void this.callbacks.onDelete?.(payload.old);
         },
@@ -85,10 +85,6 @@ export class SupabaseRealtimeListener<T extends Record<string, any>> {
       await this.supabase.removeChannel(this.channel);
       this.channel = null;
     }
-  }
-
-  get connected() {
-    return this.channel !== null;
   }
 
   public async destroy() {

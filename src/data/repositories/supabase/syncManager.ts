@@ -12,6 +12,7 @@ import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseR
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
+  private connected: boolean = false;
 
   public readonly client: SupabaseClient;
   private lastPull: Date;
@@ -24,7 +25,6 @@ export class SyncManager {
     this.lastPull = new Date(localStorage.getItem("LastPull") ?? '2025-01-01T00:00:00Z');
 
     void this.initializeListeners();
-    // if (navigator.onLine) this.handleOnline();
   }
 
   public static getInstance(): SyncManager {
@@ -33,11 +33,8 @@ export class SyncManager {
   }
 
   private async initializeListeners() {
-    window.addEventListener('online', this.InitSync);
-    window.addEventListener('offline', this.CloseSync);
-
-    const user = await this.getUser();
-    if (!user) return;
+    window.addEventListener('online', () => void this.InitSync);
+    window.addEventListener('offline', () => void this.CloseSync);
 
     // 1️⃣ — Dexie → Supabase
     this.dexieListener = new DexieObservableListener({
@@ -96,14 +93,14 @@ export class SyncManager {
           console.log(`[Supabase] Delete ${backup.object_type} → delete in dexie`);
           await this.applyRemoteDelete(backup);
         },
-      },
-      user.id,
+      }
     );
+
+    await this.getUser(); // check if connected;
   }
 
   public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
     await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
-
     const user = await this.getUser();
     if (!user) return { error: `[CREATE] Sync: error not logged in`};
 
@@ -338,18 +335,23 @@ export class SyncManager {
     await table.delete(object_id);
   }
 
-  public InitSync() {
-    this.realtimeListener?.connect();
+  public async InitSync() {
+    await this.realtimeListener?.connect();
+    this.connected = true;
     SyncableTables.forEach((value) => void this.pullUpdates(value as keyof typeof db));
     void this.pushPendingOperations();
   }
 
-  public CloseSync() {
-    void this.realtimeListener?.disconnect();
+  public async CloseSync() {
+    await this.realtimeListener?.disconnect();
+    this.connected = false;
   }
 
   private async getUser(): Promise<User | null> {
-    return (await supabase.auth.getUser()).data.user;
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user == null && this.connected) await this.InitSync(); // TODO refactor clean spaghetti
+    if (user !== null && !this.connected) await this.InitSync();
+    return user
   }
 
   public async destroy(): Promise<void> {
@@ -358,7 +360,7 @@ export class SyncManager {
       await this.realtimeListener.destroy();
       this.realtimeListener = null;
     }
-    window.removeEventListener('online', this.InitSync);
-    window.removeEventListener('offline', this.CloseSync);
+    window.removeEventListener('online', () => void this.InitSync);
+    window.removeEventListener('offline', () => void this.CloseSync);
   }
 }
