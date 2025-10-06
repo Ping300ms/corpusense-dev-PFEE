@@ -42,7 +42,7 @@ db.version(1).stores({
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',
-  syncPendingOperations: '&id, type, table, object_id, date',
+  syncPendingOperations: '&id, type, location, table, object_id, date',
 });
 
 // db.version(33)

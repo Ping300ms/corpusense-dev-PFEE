@@ -29,7 +29,7 @@ export default function EditAnnotationPage() {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="panel p-6 space-y-6 max-w-3xl mx-auto">
     <h1 className="text-xl font-bold">✏️ Édition Annotation</h1>
 
   <label className="block">

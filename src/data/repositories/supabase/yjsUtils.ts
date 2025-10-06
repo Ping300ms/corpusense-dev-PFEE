@@ -1,6 +1,7 @@
 /* eslint-disable */
 import * as Y from "yjs";
 import { Syncable } from "@/data/models/Syncable.ts";
+import { Doc } from 'yjs';
 
 /**
  * Convert Syncable → CRDT
@@ -15,15 +16,14 @@ export function syncableToUint8<T extends Syncable>(obj: T): Uint8Array {
     if (k !== "synced") map.set(k, v);
   });
 
-  return Y.encodeStateAsUpdate(doc);
+  return Y.encodeStateAsUpdateV2(doc);
 }
 
 /**
  * Convert CRDT → Syncable
  */
 export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, update);
+  const doc = uint8toDoc(update);
 
   const map = doc.getMap<any>("content");
   const obj: any = {};
@@ -35,24 +35,29 @@ export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
   return obj as T;
 }
 
+export function uint8toDoc(arr: Uint8Array) {
+  const doc = new Y.Doc();
+  Y.applyUpdateV2(doc, arr);
+  return doc;
+}
+
 /**
  * Merge two CRDT docs
  */
-export function mergeUint8(local: Uint8Array, remote: Uint8Array): Uint8Array {
-  const doc = new Y.Doc();
-  const l = new Y.Doc();
-  const r = new Y.Doc();
+export function mergeDocs(localDoc: Doc, remoteDoc: Doc) {
+  let local = Y.encodeStateAsUpdateV2(localDoc)
+  let remote = Y.encodeStateAsUpdateV2(remoteDoc)
 
-  Y.applyUpdate(l, local);
-  Y.applyUpdate(r, remote);
+  const stateVector1 = Y.encodeStateVectorFromUpdateV2(local)
+  const stateVector2 = Y.encodeStateVectorFromUpdateV2(remote)
+  const diff1 = Y.diffUpdateV2(local, stateVector2)
+  const diff2 = Y.diffUpdateV2(remote, stateVector1)
 
-  const lUpdate = Y.encodeStateAsUpdate(l);
-  const rUpdate = Y.encodeStateAsUpdate(r);
+  // sync clients
+  local = Y.mergeUpdatesV2([local, diff2])
+  remote = Y.mergeUpdatesV2([remote, diff1])
 
-  Y.applyUpdate(doc, lUpdate);
-  Y.applyUpdate(doc, rUpdate);
-
-  return Y.encodeStateAsUpdate(doc);
+  return { local: Y.encodeStateAsUpdateV2(localDoc), remote: Y.encodeStateAsUpdateV2(remoteDoc)};
 }
 
 export function encodeDocToJSONB(update: Uint8Array): number[] {

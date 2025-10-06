@@ -8,6 +8,7 @@ import { Annotation } from '@/data/models/Annotation.ts';
 import { DataModel } from '@/data/models/DataModel.ts';
 import { EntityTable } from 'dexie';
 import { SyncableObject } from '@/data/models/Syncable.ts';
+import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
 
 export default function HomePage() {
   const [collections, setCollections] = useState<CollectionDetails[]>([]);
@@ -22,7 +23,14 @@ export default function HomePage() {
     setModels(await db.models.toArray());
   };
 
-  useEffect(() => { void loadData(); }, []);
+  useEffect(() => {
+    void loadData();
+    new DexieObservableListener({
+      onAdd: () => loadData(),
+      onUpdate: () => loadData(),
+      onDelete: () => loadData(),
+    });
+  }, []);
 
   const handleDelete = async (table: keyof typeof db, id: string) => {
     await (db[table] as unknown as EntityTable<SyncableObject, 'id'>).delete(id);
@@ -30,7 +38,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="panel p-4 space-y-6">
       <h1 className="text-2xl font-bold">📚 Home</h1>
 
       {/* Collections */}

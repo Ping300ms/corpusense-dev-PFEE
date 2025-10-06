@@ -9,7 +9,7 @@ import { SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
 export interface OnLocalChangeCallbacks {
   onAdd?: (entity: SyncableObject, table: string) => void | Promise<void>;
   onUpdate?: (entity: SyncableObject, table: string) => void | Promise<void>;
-  onDelete?: (entity: SyncableObject, table: string) => void | Promise<void>;
+  onDelete?: (key: string, table: string) => void | Promise<void>;
 }
 
 export class DexieObservableListener {
@@ -48,6 +48,6 @@ export class DexieObservableListener {
   }
 
   private onDelete(change: IDeleteChange): void {
-    void this.callbacks.onDelete?.(change.oldObj as SyncableObject, change.table);
+    void this.callbacks.onDelete?.(change.key as string, change.table);
   }
 }

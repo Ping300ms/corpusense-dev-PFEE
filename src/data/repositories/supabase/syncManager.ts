@@ -3,7 +3,9 @@ import { db } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
 import { Syncable, SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
-import { syncableToUint8, uint8ToSyncable, mergeUint8, encodeDocToJSONB, decodeDocFromJSONB } from './yjsUtils.ts';
+import { syncableToUint8, uint8ToSyncable, mergeDocs, encodeDocToJSONB, decodeDocFromJSONB,
+  uint8toDoc
+} from './yjsUtils.ts';
 import Backup from '@/data/models/Backup.ts';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
 import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseRealtimeListener.ts';
@@ -40,16 +42,31 @@ export class SyncManager {
     // 1️⃣ — Dexie → Supabase
     this.dexieListener = new DexieObservableListener({
       onAdd: async (entity, table) => {
+        const pendingId = await this.isPendingOperation("CREATE", "DEXIE", table, entity.id)
+        if (pendingId !== null) {
+          await this.removePendingOperation(pendingId);
+          return;
+        }
         console.log(`[Dexie] Added ${table} → pushing to Supabase`);
         await this.create(entity, table as keyof typeof db);
       },
       onUpdate: async (entity, table) => {
-        console.log(`[Dexie] Updated ${table} → pushing to Supabase`);
+        const pendingId = await this.isPendingOperation("UPDATE", "DEXIE", table, entity.id)
+        if (pendingId !== null) {
+          await this.removePendingOperation(pendingId);
+          return;
+        }
+        console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
         await this.push(entity, table as keyof typeof db);
       },
-      onDelete: async (entity, table) => {
+      onDelete: async (key, table) => {
+        const pendingId = await this.isPendingOperation("DELETE", "DEXIE", table, key)
+        if (pendingId !== null) {
+          await this.removePendingOperation(pendingId);
+          return;
+        }
         console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
-        await this.delete(entity.id, table as keyof typeof db);
+        await this.delete(key, table as keyof typeof db);
       },
     });
 
@@ -57,16 +74,35 @@ export class SyncManager {
     this.realtimeListener = new SupabaseRealtimeListener<Backup>(
       this.client,
       {
-        onAdd: async (backup) => await this.applyRemoteChange(backup),
-        onUpdate: async (backup) => await this.applyRemoteChange(backup),
-        onDelete: async (backup) => await this.applyRemoteDelete(backup),
+        onAdd: async (backup) => {
+          const pendingId = await this.isPendingOperation("CREATE", "SUPABASE", backup.object_type, backup.object_id)
+          if (pendingId !== null) {
+            await this.removePendingOperation(pendingId);
+            return;
+          }
+          console.log(`[Supabase] Add ${backup.object_type} → adding to dexie`);
+          await this.applyRemoteChange(backup);
+        },
+        onUpdate: async (backup) => {
+          const pendingId = await this.isPendingOperation(backup.deleted_at !== null ? "DELETE" : "UPDATE", "SUPABASE", backup.object_type, backup.object_id)
+          if (pendingId !== null) {
+            await this.removePendingOperation(pendingId);
+            return;
+          }
+          console.log(`[Supabase] Updated ${backup.object_type} → update in dexie`, uint8ToSyncable(decodeDocFromJSONB(backup.content)));
+          await this.applyRemoteChange(backup);
+        },
+        onDelete: async (backup) => {
+          console.log(`[Supabase] Delete ${backup.object_type} → delete in dexie`);
+          await this.applyRemoteDelete(backup);
+        },
       },
-      user.id
+      user.id,
     );
   }
 
   public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
-    const pendingId = await this.addPendingOperation("CREATE", type, obj.id);
+    await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
 
     const user = await this.getUser();
     if (!user) return { error: `[CREATE] Sync: error not logged in`};
@@ -84,12 +120,11 @@ export class SyncManager {
 
     if (error) return { error: `[CREATE] Sync: error inserting into supabase ${type} ${obj.id} ${error.message}` };
 
-    await this.removePendingOperation(pendingId);
     return obj;
   }
 
   public async delete(id: string, type: keyof typeof db): Promise<void | { error: string }> {
-    const pendingId = await this.addPendingOperation("DELETE", type, id);
+    await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
     const user = await this.getUser();
     if (!user) return { error: `[DELETE] Sync: error not logged in`};
@@ -104,12 +139,10 @@ export class SyncManager {
       .maybeSingle<Backup>();
 
     if (error) return { error: `[DELETE] Sync: error deleting from supabase ${type} ${id} ${error.message}` };
-
-    await this.removePendingOperation(pendingId);
   }
 
   public async push<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
-    const pendingId = await this.addPendingOperation("UPDATE", type, obj.id);
+    await this.addPendingOperation("UPDATE", "SUPABASE", type, obj.id);
 
     const user = await this.getUser();
     if (!user) return { error: `[UPDATE] Sync: error not logged in`};
@@ -127,7 +160,7 @@ export class SyncManager {
     if (error) return { error: `[PUSH] Sync: error pulling from supabase ${type} ${obj.id} ${error.message}` };
 
     let mergedUpdate = localUpdate;
-    if (remote?.content != null) mergedUpdate = mergeUint8(localUpdate, decodeDocFromJSONB(remote.content));
+    if (remote?.content != null) mergedUpdate = mergeDocs(uint8toDoc(localUpdate), uint8toDoc(decodeDocFromJSONB(remote.content))).local;
 
     const mergedObj = uint8ToSyncable<T>(mergedUpdate);
     mergedObj.updated_at = new Date().toISOString();
@@ -146,7 +179,6 @@ export class SyncManager {
 
     if (upsertError) return { error: `[PUSH] Sync: error updating into supabase ${type} ${obj.id} ${upsertError.message}` };
 
-    await this.removePendingOperation(pendingId);
     return mergedObj;
   }
 
@@ -177,8 +209,26 @@ export class SyncManager {
     }
   }
 
+  private async isPendingOperation(
+    type: "CREATE" | "UPDATE" | "DELETE",
+    location: "DEXIE" | "SUPABASE",
+    table: string,
+    object_id: string
+  ) {
+    const operation = await db.syncPendingOperations.filter(
+      (op) =>
+        object_id === op.object_id &&
+        op.type === type &&
+        op.location === location &&
+        op.table === table &&
+        op.object_id === object_id
+    ).first();
+    return operation?.id ?? null;
+  }
+
   private async addPendingOperation(
     type: "CREATE" | "UPDATE" | "DELETE",
+    location: "DEXIE" | "SUPABASE",
     table: string,
     object_id: string
   ): Promise<string> {
@@ -190,6 +240,7 @@ export class SyncManager {
       return db.syncPendingOperations.add({
         id: crypto.randomUUID(),
         type,
+        location,
         table,
         object_id,
         date: new Date(),
@@ -251,6 +302,7 @@ export class SyncManager {
 
   private async applyRemoteChange(backup: Backup): Promise<void> {
     if (backup.deleted_at != null) { // remote has been soft deleted
+      await this.addPendingOperation("DELETE", "DEXIE", backup.object_type, backup.object_id);
       await this.applyRemoteDelete(backup);
       return;
     }
@@ -261,13 +313,15 @@ export class SyncManager {
     const local = await table.get(object_id);
 
     if (local === undefined) { // local doesn't exist
+      await this.addPendingOperation("CREATE", "DEXIE", backup.object_type, backup.object_id);
       await table.add(uint8ToSyncable(remote));
       return;
     }
 
-    const merged = uint8ToSyncable(mergeUint8(syncableToUint8(local), remote));
+    const merged = uint8ToSyncable(mergeDocs(uint8toDoc(syncableToUint8(local)), uint8toDoc(remote)).remote);
 
-    console.log(`[Supabase] Applying remote ${object_type} ${object_id}`);
+    console.log(`[Supabase] Applying remote ${object_type} ${object_id}`, merged);
+    await this.addPendingOperation("UPDATE", "DEXIE", backup.object_type, backup.object_id);
     await table.put(merged);
   }
 

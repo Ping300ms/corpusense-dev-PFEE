@@ -33,25 +33,25 @@ export class SupabaseRealtimeListener<T extends Record<string, any>> {
 
     // Maybe split into multiple channels ?
     this.channel = this.supabase.channel('backup-changes');
-
+    if (this.userId) {}
     this.channel
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'backup', filter: `user_id=eq.${this.userId}` },
+        { event: 'INSERT', schema: 'public', table: 'backup' }, // , filter: `user_id=eq.${this.userId}`
         (payload: RealtimePostgresInsertPayload<T>) => {
           void this.callbacks.onAdd?.(payload.new);
         },
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'backup', filter: `user_id=eq.${this.userId}` },
+        { event: 'UPDATE', schema: 'public', table: 'backup' },
         (payload: RealtimePostgresUpdatePayload<T>) => {
           void this.callbacks.onUpdate?.(payload.new);
         },
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'backup', filter: `user_id=eq.${this.userId}` },
+        { event: 'DELETE', schema: 'public', table: 'backup' },
         (payload: RealtimePostgresDeletePayload<T>) => {
           void this.callbacks.onDelete?.(payload.old);
         },
