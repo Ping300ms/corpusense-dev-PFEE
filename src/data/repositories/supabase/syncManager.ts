@@ -183,7 +183,9 @@ export class SyncManager {
   }
 
   public async pushPendingOperations(): Promise<void> {
-    const pending = await db.syncPendingOperations.orderBy('date').toArray();
+    const pending = await db.syncPendingOperations.orderBy('date')
+      .filter((op) => op.location === "SUPABASE"
+    ).toArray();
 
     for (const op of pending) {
       console.log(`[SyncManager] Replaying pending ${op.type} → ${op.table}:${op.object_id}`);
