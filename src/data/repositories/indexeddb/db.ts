@@ -25,8 +25,11 @@ const db = new Dexie('mezanno') as Dexie & {
   namedEntities: EntityTable<NamedEntity, 'id'>;
   results: EntityTable<Result, 'id'>;
   workers: EntityTable<Worker, 'id'>;
-  syncPendingOperations: EntityTable<SyncPendingOperations, 'id'>;
 };
+
+const dbSync = new Dexie('sync') as Dexie & {
+  pendingOperations: EntityTable<SyncPendingOperations, 'id'>;
+}
 
 db.version(1).stores({
   collections: '&id, name, *tags.id, synced',
@@ -42,7 +45,10 @@ db.version(1).stores({
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',
-  syncPendingOperations: '&id, type, location, table, object_id, date',
+});
+
+dbSync.version(1).stores({
+  pendingOperations: '&id, type, location, table, object_id, date',
 });
 
 export const clearDatabase = async () => {
@@ -130,4 +136,4 @@ Dexie.debug = true;
 //     }
 //   });
 
-export { db };
+export { db, dbSync };

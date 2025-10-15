@@ -1,5 +1,5 @@
 import { SupabaseClient, User } from '@supabase/supabase-js';
-import { db } from "@/data/repositories/indexeddb/db.ts";
+import { db, dbSync } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
 import { Syncable, SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
@@ -37,7 +37,9 @@ export class SyncManager {
     window.addEventListener('offline', () => void this.CloseSync);
 
     // 1️⃣ — Dexie → Supabase
-    this.dexieListener = new DexieObservableListener({
+    this.dexieListener = new DexieObservableListener(
+      db,
+      {
       onAdd: async (entity, table) => {
         const pendingId = await this.isPendingOperation("CREATE", "DEXIE", table, entity.id)
         if (pendingId !== null) {
@@ -180,7 +182,7 @@ export class SyncManager {
   }
 
   public async pushPendingOperations(): Promise<void> {
-    const pending = await db.syncPendingOperations.orderBy('date')
+    const pending = await dbSync.pendingOperations.orderBy('date')
       .filter((op) => op.location === "SUPABASE"
     ).toArray();
 
@@ -214,7 +216,7 @@ export class SyncManager {
     table: string,
     object_id: string
   ) {
-    const operation = await db.syncPendingOperations.filter(
+    const operation = await dbSync.pendingOperations.filter(
       (op) =>
         object_id === op.object_id &&
         op.type === type &&
@@ -231,12 +233,12 @@ export class SyncManager {
     table: string,
     object_id: string
   ): Promise<string> {
-    const obj = await db.syncPendingOperations.filter(
+    const obj = await dbSync.pendingOperations.filter(
       (op) => object_id === op.object_id
     ).first();
 
     if (obj === undefined) {
-      return db.syncPendingOperations.add({
+      return dbSync.pendingOperations.add({
         id: crypto.randomUUID(),
         type,
         location,
@@ -246,13 +248,13 @@ export class SyncManager {
       });
     }
 
-    if (obj.type !== type) await db.syncPendingOperations.update(obj.id, { ...obj, type });
+    if (obj.type !== type) await dbSync.pendingOperations.update(obj.id, { ...obj, type });
 
     return obj.id;
   }
 
   private async removePendingOperation(id: string): Promise<void> {
-    await db.syncPendingOperations.delete(id);
+    await dbSync.pendingOperations.delete(id);
   }
 
   public async pullUpdates<T extends Syncable>(type: keyof typeof db): Promise<T[] | { error: string }> {
