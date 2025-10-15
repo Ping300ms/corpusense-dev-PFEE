@@ -11,6 +11,20 @@ export const selectCollectionById = createSelector(
   (values, collectionId) => values.find((elt) => elt.id === collectionId),
 );
 
+export const selectCollectionsByIds = createSelector(
+  [
+    (state: RootState) => state.collections?.values ?? [],
+    (_: RootState, collectionIds: string[]) => collectionIds,
+  ],
+  (values, collectionIds) => values.filter((elt) => collectionIds.includes(elt.id)),
+);
+
+export const selectCollectionNameExists = createSelector(
+  [(state: RootState) => state.collections?.values ?? [], (_: RootState, name: string) => name],
+  (values, name) =>
+    values.find((elt) => elt.name.toLowerCase() === name.toLowerCase()) !== undefined,
+);
+
 export const selectCurrentCollection = (state: RootState) => state.collections?.currentCollection;
 
 export const selectOpenedCollections = createSelector(
@@ -23,7 +37,7 @@ export const selectOpenedCollections = createSelector(
 );
 
 export const selectLoadedCanvasById = (state: RootState, canvasId: string) =>
-  state.collections?.loadedCanvases?.find((canvas) => canvas.id === canvasId);
+  state.collections?.loadedCanvases?.[canvasId]?.content;
 
 export const selectModelIdOfCollection = createSelector(
   [
@@ -34,4 +48,12 @@ export const selectModelIdOfCollection = createSelector(
 );
 
 export const selectCanvasHasOcrAnnotations = (state: RootState, canvasId: string) =>
-  state.collections?.canvasHasOcrAnnotations?.[canvasId] ?? false;
+  state.collections?.loadedCanvases?.[canvasId]?.infos.hasOcrAnnotations ?? false;
+
+export const selectIsCollectionOffline = createSelector(
+  [
+    (state: RootState) => state.collections?.values ?? [],
+    (_: RootState, collectionId: string) => collectionId,
+  ],
+  (values, collectionId) => values.find((elt) => elt.id === collectionId)?.offline ?? false,
+);

@@ -1,10 +1,12 @@
 import { Result } from '@/data/models/Result';
 import { Task, WorkerResponse } from '@/data/models/Worker';
+import { getIsExperimentalFeaturesActivated } from '@/hooks/useExperimental';
 
 export type WorkerPluginInfo = {
   displayName?: string;
   description?: string;
   category?: string;
+  exportFormats?: string[];
 };
 export type WorkerPlugin = {
   run: WorkerRunFunction;
@@ -15,13 +17,14 @@ export type WorkerRunFunction = (
   task: Task,
   params?: Record<string, unknown>,
 ) => Promise<WorkerResponse>; //saga or async function : if we need to call an effect (eg: call, put, select), we have to use a saga
-export type WorkerExportFunction = (results: Result[]) => void;
+export type WorkerExportFunction = (results: Result[], formats: string[]) => void;
 type WorkerModule = {
   default: WorkerRunFunction;
   pluginName: string;
   pluginDisplayName?: string;
   pluginDescription?: string;
   pluginCategory?: string;
+  pluginExportFormats?: string[];
   exportResult?: WorkerExportFunction;
 };
 
@@ -45,6 +48,9 @@ const isWorkerModule = (mod: unknown): mod is WorkerModule => {
     (m.pluginDisplayName === undefined || typeof m.pluginDisplayName === 'string') &&
     (m.pluginDescription === undefined || typeof m.pluginDescription === 'string') &&
     (m.pluginCategory === undefined || typeof m.pluginCategory === 'string') &&
+    (m.pluginExportFormats === undefined ||
+      (Array.isArray(m.pluginExportFormats) &&
+        m.pluginExportFormats.every((f) => typeof f === 'string'))) &&
     (m.exportResult === undefined || typeof m.exportResult === 'function')
   );
 };
@@ -53,20 +59,30 @@ export function loadWorkerPlugins() {
   const modules = import.meta.glob('./workers/*.ts', { eager: true });
   const workerPlugins: Record<string, WorkerPlugin> = {};
 
+  const experimentalFeaturesEnabled = getIsExperimentalFeaturesActivated();
+
   for (const path in modules) {
     const mod = modules[path] as WorkerModule;
     if (isWorkerModule(mod)) {
-      workerPlugins[mod.pluginName] = {
-        run: mod.default,
-        info: {
-          displayName: mod.pluginDisplayName,
-          description: mod.pluginDescription,
-          category: mod.pluginCategory,
-        },
-        export: mod.exportResult,
-      };
+      // If experimental features are enabled, load all plugins.
+      // If not, only load plugins that are not marked as experimental.
+      if (
+        experimentalFeaturesEnabled === true ||
+        (experimentalFeaturesEnabled === false && !('experimental' in mod))
+      ) {
+        workerPlugins[mod.pluginName] = {
+          run: mod.default,
+          info: {
+            displayName: mod.pluginDisplayName,
+            description: mod.pluginDescription,
+            category: mod.pluginCategory,
+            exportFormats: mod.pluginExportFormats,
+          },
+          export: mod.exportResult,
+        };
 
-      console.info(`Plugin saga ${mod.pluginName} loaded successfully`);
+        console.info(`Plugin saga ${mod.pluginName} loaded successfully`);
+      }
     }
   }
 

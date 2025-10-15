@@ -1,23 +1,28 @@
 /* eslint-disable @typescript-eslint/no-misused-promises */
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import { FormProps } from '@/hooks/ui/useDialog';
 import { createModelRequest } from '@/state/reducers/models';
 import { selectModels } from '@/state/selectors/models';
 import { zodResolver } from '@hookform/resolvers/zod';
+import i18next from 'i18next';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Button } from './ui/button';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
-import { Input } from './ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../ui/form';
+import { Input } from '../ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 const formSchema = z.object({
-  name: z.string(),
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: i18next.t('form_error_required') }),
   description: z.string().optional(),
   fromModelId: z.string().optional(),
 });
 
-const NewModelForm = ({ close }: { close: () => void }) => {
+const NewModelForm = ({ formRef, setCanSubmit }: FormProps) => {
   const appDispatch = useAppDispatch();
   const { t } = useTranslation();
   const models = useAppSelector(selectModels);
@@ -26,14 +31,15 @@ const NewModelForm = ({ close }: { close: () => void }) => {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
-      description: '',
-      fromModelId: '',
     },
+    mode: 'onChange',
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log('values', values);
+  useEffect(() => {
+    setCanSubmit(form.formState.isDirty && form.formState.isValid);
+  }, [form.formState]);
 
+  function onSubmit(values: z.infer<typeof formSchema>) {
     appDispatch(
       createModelRequest({
         name: values.name,
@@ -46,7 +52,7 @@ const NewModelForm = ({ close }: { close: () => void }) => {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className='w-full space-y-4'>
+      <form ref={formRef} onSubmit={form.handleSubmit(onSubmit)} className='w-full space-y-4'>
         <FormField
           control={form.control}
           name='name'
@@ -98,9 +104,6 @@ const NewModelForm = ({ close }: { close: () => void }) => {
             </FormItem>
           )}
         />
-        <Button type='submit' title={t('btn_create')}>
-          {t('btn_create')}
-        </Button>
       </form>
     </Form>
   );

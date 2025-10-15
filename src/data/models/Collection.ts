@@ -9,6 +9,7 @@ export type CollectionDetails = Syncable & {
   tags: string[];
   modelId?: string;
   contentSize: number;
+  offline: boolean;
 };
 
 export type CollectionContent = Syncable & {
