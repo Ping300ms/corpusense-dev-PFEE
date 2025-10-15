@@ -1,5 +1,5 @@
 import { Annotation, ElementType } from '@/data/models/Annotation';
-import { Collection, CollectionContent, CollectionDetails, ExportedCollection } from '@/data/models/Collection';
+import { Collection, CollectionDetails, ExportedCollection } from '@/data/models/Collection';
 import {
   getAnnotationRepository,
   getCollectionRepository,
@@ -37,7 +37,6 @@ import {
 import { pushError, pushInfo } from '../reducers/events';
 import { removeWorkersSuccess } from '../reducers/workers';
 import { fetchManifestFromURL } from './manifests';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 function* fetchAllCollections(): Generator<
   CallEffect<CollectionDetails[]> | PutEffect,
@@ -45,9 +44,6 @@ function* fetchAllCollections(): Generator<
   CollectionDetails[]
 > {
   try {
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.pullUpdates<CollectionDetails>], 'collections');
-
     const collectionRepository = getCollectionRepository();
     const collections: CollectionDetails[] = yield call([
       collectionRepository,
@@ -62,16 +58,19 @@ function* fetchAllCollections(): Generator<
 
 function* handleCreateCollection(action: PayloadAction<string>) {
   const name = action.payload;
-  const newCollection: Collection = { id: uuid(), name, tags: [], contentSize: 0, content: [], updated_at: new Date().toISOString(), synced: false };
+  const newCollection: Collection = {
+    id: uuid(),
+    name,
+    tags: [],
+    contentSize: 0,
+    content: [],
+    updated_at: new Date().toISOString()};
 
   try {
     const collectionRepository = getCollectionRepository();
     yield call([collectionRepository, collectionRepository.create], newCollection);
     yield put(createCollectionSuccess(newCollection));
     yield put(pushInfo(i18n.t('toast_collection_created')));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.create<CollectionDetails>], newCollection, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -94,9 +93,6 @@ function* handleUpdateCollection(action: PayloadAction<Collection>) {
 
     yield put(updateCollectionSuccess(action.payload));
     yield put(pushInfo(i18n.t('toast_collection_saved')));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.push<CollectionDetails>], action.payload, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -125,9 +121,6 @@ function* handleRemoveCollection(
     //A priori, plus besoin de prévenir le store, si on supprime une collection, c'est que l'on est sur la page des collections
     // yield put(removeAnnotationSuccess(collectionId));
     yield put(pushInfo(i18n.t('toast_collection_deleted')));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.delete], id, 'collections');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }
@@ -168,14 +161,12 @@ function* handleAddSelectionToCollection(
       updatedCollection,
     );
 
-    // TODO sync
     //Add first annotations for the new canvases
     const firstAnnotations = generateFirstAnnotation(selection, collectionId, existingCanvasIds);
     const annotationRepository = getAnnotationRepository();
     yield call([annotationRepository, annotationRepository.addAll], firstAnnotations);
     yield put(addSelectionToCollectionSuccess(updatedCollection));
 
-    // TODO sync
     if (selection.length === 1) {
       yield put(pushInfo(i18n.t('toast_one_element_added')));
     } else if (selection.length > 1) {
@@ -203,8 +194,7 @@ function* handleCreateCollectionWithSelection(
     name,
     tags: [],
     contentSize: selection.length,
-    updated_at: new Date().toISOString(),
-    synced: false,
+    updated_at: new Date().toISOString()
   };
   const content = generateCollectionContent(
     0,
@@ -219,17 +209,12 @@ function* handleCreateCollectionWithSelection(
       content,
     });
 
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.create<CollectionDetails>], newCollection, 'collections');
-    yield call([syncManager, syncManager.create<CollectionContent>], { content, updated_at: new Date().toISOString(), synced: false } as CollectionContent, 'collectionContents');
-
     if (id === undefined) {
       //if an id was provided, it means it is an import, so we don't need to create the first annotations
       const firstAnnotations = generateFirstAnnotation(selection, collectionId);
       const annotationRepository = getAnnotationRepository();
       yield call([annotationRepository, annotationRepository.addAll], firstAnnotations);
 
-      // TODO sync
     }
     yield put(createCollectionSuccess(newCollection));
     yield put(pushInfo(i18n.t('toast_collection_created')));
@@ -253,10 +238,6 @@ function* handleRemoveElementFromCollection(
     );
     yield put(removeElementFromCollectionSuccess(updatedCollection));
     yield put(pushInfo(i18n.t('toast_element_removed')));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.push<CollectionDetails>], updatedCollection, 'collections');
-    yield call([syncManager, syncManager.push<CollectionContent>], updatedCollection, 'collectionContents');
   } catch (e) {
     yield put(pushError(getErrorMessage(e)));
   }

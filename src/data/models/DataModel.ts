@@ -1,6 +1,6 @@
 import { Syncable } from '@/data/models/Syncable.ts';
 
-export interface DataField extends Syncable {
+export interface DataField {
   id: string;
   name: string;
   type: string;

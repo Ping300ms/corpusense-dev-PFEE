@@ -18,11 +18,8 @@ import {
   saveModelSuccess,
   setModels,
 } from '../reducers/models';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 function* fetchModels(): Generator<Effect, void, DataModel[]> {
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.pullUpdates<DataModel>], 'models');
 
   const modelRespository = getModelRepository();
   const models = yield call([modelRespository, modelRespository.getAll]);
@@ -55,15 +52,11 @@ function* handleCreateModel(
     description: description,
     fields,
     prompt,
-    updated_at: new Date().toISOString(),
-    synced: false,
+    updated_at: new Date().toISOString()
   };
   const modelRespository = getModelRepository();
   yield call([modelRespository, modelRespository.add], newModel);
   yield put(createModelSuccess(newModel));
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.create<DataModel>], newModel, 'models');
 }
 
 function* handleSaveModel(action: PayloadAction<DataModel>) {
@@ -71,18 +64,12 @@ function* handleSaveModel(action: PayloadAction<DataModel>) {
   yield call([modelRespository, modelRespository.update], action.payload);
   yield put(saveModelSuccess(action.payload));
   yield put(pushInfo(t('info_model_saved')));
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.push<DataModel>], action.payload, 'models');
 }
 
 function* handleRemoveModel(action: PayloadAction<string>) {
   const modelRespository = getModelRepository();
   yield call([modelRespository, modelRespository.deleteById], action.payload);
   yield put(removeModelSuccess(action.payload));
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.delete], action.payload, 'models');
 }
 
 function* handleExportModel(action: PayloadAction<string>): Generator<Effect, void, DataModel> {
@@ -111,9 +98,6 @@ function* handleImportModel(action: PayloadAction<object>): Generator<Effect, vo
     }
     yield call([modelRespository, modelRespository.add], model);
     yield put(createModelSuccess(model));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.create<DataModel>], model, 'models');
   } catch (error) {
     //TODO: faire une gestion des erreurs plus user friendly
     console.error('Error importing model:', error);

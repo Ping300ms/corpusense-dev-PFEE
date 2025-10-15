@@ -36,7 +36,6 @@ import {
 } from '../reducers/annotations';
 import { pushError, pushInfo } from '../reducers/events';
 import { selectCurrentScope } from '../selectors/annotations';
-import { SyncManager } from '@/data/supabase/syncManager.ts';
 
 /**
  * Saga to handle saving an annotation.
@@ -59,15 +58,12 @@ function* handleSaveAnnotation(
     .map((a) => a.order ?? -1);
   const newOrder = regions.length > 0 ? Math.max(...regions) + 1 : 1;
 
-  const newAnnotation: Annotation = { ...annotationToSave, order: newOrder, updated_at: new Date().toISOString(), synced: false };
+  const newAnnotation: Annotation = { ...annotationToSave, order: newOrder, updated_at: new Date().toISOString()};
   const updatedAnnotations = (yield call(
     [annotationRepository, annotationRepository.update],
     newAnnotation,
   )) as Annotation[];
   yield put(saveAnnotationsSuccess(updatedAnnotations));
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.create<Annotation>], newAnnotation, 'annotations');
 }
 
 /**
@@ -95,9 +91,6 @@ function* handleUpdateAnnotation(
       )) as Annotation[];
       yield put(saveAnnotationsSuccess(updatedAnnotations));
       yield put(pushInfo(i18n.t('toast_annotation_saved')));
-
-      const syncManager: SyncManager = SyncManager.getInstance();
-      yield call([syncManager, syncManager.push<Annotation>], annotationToSave, 'annotations');
     }
   } catch (e) {
     console.warn(e);
@@ -120,9 +113,6 @@ function* handleRemoveAnnotationsByIds(
       yield put(fetchAnnotationsSuccess({ scope, annotations }));
     }
     yield put(pushInfo(i18n.t('toast_annotation_deleted', { count: action.payload.length })));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.deleteByIds], action.payload, 'annotations');
   } catch (e) {
     console.warn(e);
   }
@@ -141,9 +131,6 @@ function* handleRemoveAnnotationsByScope(
 
   yield put(removeAnnotationsSuccess(annotationsDeleted));
   yield put(pushInfo(i18n.t('toast_annotation_deleted', { count: annotationsDeleted.length })));
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.deleteByIds], annotationsDeleted, 'annotations');
 }
 
 function* handleRemoveAnnotationsInside(
@@ -170,9 +157,6 @@ function* handleRemoveAnnotationsInside(
     yield put(
       pushInfo(i18n.t('toast_annotation_deleted', { count: annotationsIdsToRemove.length })),
     );
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.deleteByIds], annotationsIdsToRemove, 'annotations');
   } catch (e) {
     console.warn(e);
     yield put(pushError(getErrorMessage(e)));
@@ -190,9 +174,6 @@ function* handleUpdateAnnotationOrder(
       action.payload.value,
     );
     yield put(saveAnnotationsSuccess(updatedAnnotations));
-
-    const syncManager: SyncManager = SyncManager.getInstance();
-    yield call([syncManager, syncManager.pushMultiples<Annotation>], updatedAnnotations, 'annotations');
   } catch (error) {
     console.warn(error);
   }
@@ -292,8 +273,6 @@ function* duplicateAnnotationsToPages({
         yield call([annotationRepository, annotationRepository.addAll], duplicatedAnnotations);
       }
     }
-
-    // TODO syncManager
   } catch (e) {
     console.warn(e);
   }
@@ -375,9 +354,6 @@ function* handleRecomputeRegions(
   }
   if (newRegionsAnnotations.length > 0) {
     yield call([annotationRepository, annotationRepository.addAll], newRegionsAnnotations);
-    //TODO : update store yield put(update...)
-
-    // TODO syncManager
   }
 }
 
@@ -385,9 +361,6 @@ function* handleFetchAnnotations(
   action: PayloadAction<CanvasScope>,
 ): Generator<Effect, void, Annotation[]> {
   const { collectionId, canvasId } = action.payload;
-
-  const syncManager: SyncManager = SyncManager.getInstance();
-  yield call([syncManager, syncManager.pullUpdates<Annotation>], 'annotations');
 
   const annotationRepository = getAnnotationRepository();
   const annotations = yield call([annotationRepository, annotationRepository.getByScope], {
