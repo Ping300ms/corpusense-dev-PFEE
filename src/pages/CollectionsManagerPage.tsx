@@ -1,15 +1,4 @@
-import AlertDialogForm from '@/components/AlertDialogForm';
-import NewCollectionForm from '@/components/NewCollectionForm';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { useAlertDialogContext } from '@/components/reducers/useAlertDialogContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -22,12 +11,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import UploadFileForm from '@/components/UploadFileForm';
 import { CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import useDialog from '@/hooks/ui/useDialog';
 import useAppNavigation from '@/hooks/useAppNavigation';
 import { removeCollectionRequest } from '@/state/reducers/collections';
-import { exportCollectionsRequest } from '@/state/reducers/export';
 import { selectCollections } from '@/state/selectors/collections';
 import { selectTagsByIds } from '@/state/selectors/tags';
 import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
@@ -37,14 +25,15 @@ import { useTranslation } from 'react-i18next';
 const CollectionTableRow = ({
   collection,
   addOrRemoveCollection,
-  setCollectionToDelete,
 }: {
   collection: CollectionDetails;
   addOrRemoveCollection: (collectionId: string, isAdd: boolean) => void;
-  setCollectionToDelete: (id: string) => void;
 }) => {
   const { t } = useTranslation();
   const navigation = useAppNavigation();
+  const dispatch = useAppDispatch();
+  const { openDialog } = useAlertDialogContext();
+
   const { lastExportContent, lastExportDate, lastExportStatus } = useAppSelector(
     (state) => state.export,
   );
@@ -61,7 +50,14 @@ const CollectionTableRow = ({
   }, [lastExportContent]);
 
   const handleDelete = (id: string) => {
-    setCollectionToDelete(id);
+    openDialog({
+      title: t('title_are_you_sure'),
+      description: t('description_delete_collection'),
+      onConfirm: {
+        message: t('btn_yes'),
+        action: () => dispatch(removeCollectionRequest(id)),
+      },
+    });
   };
 
   const handleOnClick = async (id: string) => {
@@ -110,6 +106,7 @@ const CollectionTableRow = ({
       </TableCell>
       <TableCell className='space-x-2 align-middle'>
         <Button
+          className='cursor-pointer'
           variant='destructive'
           onClick={(event) => {
             event.stopPropagation();
@@ -135,12 +132,12 @@ const CollectionTableRow = ({
 };
 
 const CollectionsManagerPage = () => {
-  const dispatch = useAppDispatch();
-  const collections: CollectionDetails[] = useAppSelector(selectCollections);
   const { t } = useTranslation();
+  const collections: CollectionDetails[] = useAppSelector(selectCollections);
+  const { openImportCollectionDialog, openNewCollectionDialog, openExportCollectionDialog } =
+    useDialog();
 
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
-  const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
 
   const addOrRemoveCollection = (id: string, isAdd: boolean) => {
     if (isAdd) {
@@ -153,42 +150,28 @@ const CollectionsManagerPage = () => {
   };
 
   const handleExport = () => {
-    dispatch(exportCollectionsRequest(selectedCollections));
-  };
-
-  const handleDelete = () => {
-    if (collectionToDelete === null) return;
-    dispatch(removeCollectionRequest(collectionToDelete));
-    setCollectionToDelete(null);
+    openExportCollectionDialog(selectedCollections);
   };
 
   return (
-    <div className='flex h-full w-full flex-col items-center space-y-4 rounded-2xl border-1 bg-white'>
-      <section className='mt-2 ml-4 flex w-full space-x-2'>
-        <AlertDialogForm
+    <div className='panel flex-col items-center space-y-4'>
+      <section className='mt-2 ml-4 flex w-full justify-center space-x-2'>
+        <button
+          className='soft-button'
           title={t('btn_create_collection')}
-          description={t('description_create_collection')}
-          trigger={
-            <>
-              <FilePlus />
-              {t('btn_create_collection')}
-            </>
-          }
+          onClick={openNewCollectionDialog}
         >
-          {({ close }) => <NewCollectionForm close={close} />}
-        </AlertDialogForm>
-        <AlertDialogForm
+          <FilePlus />
+          {t('btn_create_collection')}
+        </button>
+        <button
+          className='soft-button'
           title={t('btn_import_collection')}
-          description={t('description_import_collection')}
-          trigger={
-            <>
-              <Import />
-              {t('btn_import_collection')}
-            </>
-          }
+          onClick={openImportCollectionDialog}
         >
-          {({ close }) => <UploadFileForm close={close} />}
-        </AlertDialogForm>
+          <Import />
+          {t('btn_import_collection')}
+        </button>
       </section>
 
       {collections.length > 0 ? (
@@ -213,7 +196,6 @@ const CollectionsManagerPage = () => {
                   collection={col}
                   key={col.id}
                   addOrRemoveCollection={addOrRemoveCollection}
-                  setCollectionToDelete={setCollectionToDelete}
                 />
               ))}
             </TableBody>
@@ -238,31 +220,6 @@ const CollectionsManagerPage = () => {
               </TableRow>
             </TableFooter>
           </Table>
-
-          <AlertDialog
-            open={collectionToDelete !== null}
-            onOpenChange={() => setCollectionToDelete(null)}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('title_are_you_sure')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('description_delete_collection')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className='soft-button bg-white'>
-                  {t('btn_no')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  className='soft-button bg-red-400 hover:bg-red-700'
-                  onClick={handleDelete}
-                >
-                  {t('btn_yes')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
         </section>
       ) : (
         <div role='alert' className='text-2xl'>

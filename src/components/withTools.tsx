@@ -1,35 +1,32 @@
 import { Annotation, ElementType } from '@/data/models/Annotation';
 import { Worker } from '@/data/models/Worker';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import useDialog from '@/hooks/ui/useDialog';
 import {
-  duplicateAnnotationsEach2PagesRequest,
-  duplicateAnnotationsToAllPagesRequest,
   removeAnnotationsByIdsRequest,
   removeAnnotationsByScopeRequest,
 } from '@/state/reducers/annotations';
 import { exportTextOfCanvasRequest } from '@/state/reducers/export';
-import { exportWorkerResultRequest } from '@/state/reducers/workers';
 import { selectAnnotationsByType } from '@/state/selectors/annotations';
 import { selectIsWorkerOrTaskRunning } from '@/state/selectors/workers';
 import { RootState } from '@/state/store';
 import { useSelection } from '@annotorious/react';
-import { Canvas } from '@iiif/presentation-3';
-import { NotebookPen } from 'lucide-react';
-import React, { useContext } from 'react';
+import { Eye, EyeOff, Layout, NotebookPen } from 'lucide-react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import AnnotationForm from './AnnotationForm';
-import { ReducerContext } from './CanvasViewer';
-import LayoutMenu from './menu/LayoutMenu';
-import { ACTIONS, CanvasViewerContentMode } from './reducers/CanvasViewerContentReducer';
+import AnnotationForm from './forms/AnnotationForm';
+import { CanvasViewerMode } from './reducers/CanvasViewerContext';
+import { useCanvasViewerContext } from './reducers/useCanvasViewerContext';
 import Toolbar from './ToolBar';
 import { Toggle } from './ui/toggle';
 
 export const withTools = <T extends object>(WrappedComponent: React.ComponentType<T>) => {
-  const ComponentWithTools = (props: { collectionId: string; canvas: Canvas }) => {
+  const ComponentWithTools = (props: { collectionId: string }) => {
     const appDispatch = useAppDispatch();
     const { t } = useTranslation();
-    const { cvcState, cvcDispatch } = useContext(ReducerContext);
+    const { setMode, toggleAnnotations, showAnnotations, canvas, mode } = useCanvasViewerContext(); //the reducer/state of the canvas viewer
+    const { openSelectFormatDialog, openDuplicateLayoutDialog } = useDialog();
     const { selected } = useSelection(); //the annotation(s) selected in the annotorious viewer
     const isWorkerRunning = useAppSelector((state) =>
       selectIsWorkerOrTaskRunning(state, { collectionId: props.collectionId }),
@@ -39,11 +36,15 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
       selectAnnotationsByType(state, ElementType.REGION),
     );
 
+    if (canvas === undefined) {
+      return null;
+    }
+
     const handleExportText = () => {
       if (props.collectionId !== undefined) {
         appDispatch(
           exportTextOfCanvasRequest({
-            canvasId: props.canvas.id,
+            canvasId: canvas.id,
             collectionId: props.collectionId,
           }),
         );
@@ -51,7 +52,7 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
     };
 
     const handleExportResult = (worker: Worker) => {
-      appDispatch(exportWorkerResultRequest({ worker }));
+      openSelectFormatDialog(worker);
     };
 
     const handleDeleteAllAnnotations = () => {
@@ -59,7 +60,7 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
         appDispatch(
           removeAnnotationsByScopeRequest({
             scope: {
-              canvasId: props.canvas.id,
+              canvasId: canvas.id,
               collectionId: props.collectionId,
             },
           }),
@@ -67,34 +68,15 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
       }
     };
 
-    const handleDuplicateRegionToAllPages = () => {
-      if (props.collectionId !== undefined) {
-        appDispatch(
-          duplicateAnnotationsToAllPagesRequest({
-            canvasId: props.canvas.id,
-            collectionId: props.collectionId,
-          }),
-        );
-      }
-    };
-
-    const handleDuplicateRegionEach2 = () => {
-      if (props.collectionId !== undefined) {
-        appDispatch(
-          duplicateAnnotationsEach2PagesRequest({
-            canvasId: props.canvas.id,
-            collectionId: props.collectionId,
-          }),
-        );
-      }
+    const handleDuplicateLayout = () => {
+      openDuplicateLayoutDialog({
+        canvasId: canvas.id,
+        collectionId: props.collectionId,
+      });
     };
 
     const handleAddAnnotation = () => {
-      if (cvcState.mode === CanvasViewerContentMode.DRAW) {
-        cvcDispatch({ type: ACTIONS.SET_MODE, payload: CanvasViewerContentMode.MOVE });
-      } else {
-        cvcDispatch({ type: ACTIONS.SET_MODE, payload: CanvasViewerContentMode.DRAW });
-      }
+      setMode(mode === CanvasViewerMode.DRAW ? CanvasViewerMode.MOVE : CanvasViewerMode.DRAW);
     };
 
     const handleDeleteAnnotation = () => {
@@ -108,9 +90,13 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
       }
     };
 
+    const handleToggleShowAnnotations = () => {
+      toggleAnnotations();
+    };
+
     return (
       <div className='flex h-full w-full flex-col' onKeyDown={handleKeyDown}>
-        <h4 className='w-full border-b-1 text-center text-sm italic'>{props.canvas?.id}</h4>
+        <h4 className='w-full border-b-1 text-center text-sm italic'>{canvas.id}</h4>
         {isWorkerRunning ? (
           <div>
             <strong>{t('info_worker_running')}</strong>
@@ -122,29 +108,37 @@ export const withTools = <T extends object>(WrappedComponent: React.ComponentTyp
               handleDeleteAllAnnotations={handleDeleteAllAnnotations}
               handleExportResult={handleExportResult}
               scope={{
-                canvasId: cvcState.canvas?.id ?? '',
+                canvasId: canvas?.id ?? '',
                 collectionId: props.collectionId ?? '',
               }}
             />
+            {regionAnnotations.length > 0 && (
+              <button
+                className='soft-button'
+                title={t('btn_duplicate_regions')}
+                onClick={handleDuplicateLayout}
+              >
+                <Layout />
+              </button>
+            )}
             <Toggle
               className='soft-button'
               size={null}
               title={t('btn_add_annotation')}
               onClick={handleAddAnnotation}
-              pressed={cvcState.mode === CanvasViewerContentMode.DRAW}
+              pressed={mode === CanvasViewerMode.DRAW}
             >
               <NotebookPen size={24} />
             </Toggle>
-            {regionAnnotations.length > 0 && (
-              <LayoutMenu
-                handleDuplicateToAll={handleDuplicateRegionToAllPages}
-                handleDuplicateEach2={handleDuplicateRegionEach2}
-                scope={{
-                  canvasId: cvcState.canvas?.id ?? '',
-                  collectionId: props.collectionId ?? '',
-                }}
-              />
-            )}
+            <Toggle
+              className='soft-button'
+              size={null}
+              title={`${showAnnotations ? t('btn_hide_annotations') : t('btn_show_annotations')}`}
+              onClick={handleToggleShowAnnotations}
+              pressed={showAnnotations}
+            >
+              {showAnnotations ? <Eye size={24} /> : <EyeOff size={24} />}
+            </Toggle>
           </div>
         )}
         <div className='flex h-full w-full'>

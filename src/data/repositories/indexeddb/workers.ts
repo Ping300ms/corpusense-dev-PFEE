@@ -9,6 +9,16 @@ export class IndexedDBWorkerRepository implements WorkerRepository {
     return await db.workers.toArray();
   }
 
+  async getByScope(scope: Scope, subScope: boolean): Promise<Worker[]> {
+    if (subScope) {
+      return await db.workers
+        .where('scopeKey')
+        .startsWithIgnoreCase(computeScopeKey(scope))
+        .toArray();
+    }
+    return await db.workers.where('scopeKey').equals(computeScopeKey(scope)).toArray();
+  }
+
   async getByNameAndScope(workerName: string, scope: Scope): Promise<Worker | undefined> {
     //TODO return an array
     return await db.workers.where({ scopeKey: computeScopeKey(scope), name: workerName }).first();
@@ -26,6 +36,10 @@ export class IndexedDBWorkerRepository implements WorkerRepository {
     };
     await db.workers.add(newWorker);
     return newWorker;
+  }
+
+  async addAll(workers: Worker[]): Promise<void> {
+    await db.workers.bulkAdd(workers);
   }
 
   // async update(worker: Worker): Promise<void> {
