@@ -113,6 +113,7 @@
   "menu_define_end": "Set the end of the selection here",
   "menu_copy_clipboard": "Copy URL to clipboard",
   "page_title_login": "Login",
+  "page_title_register": "Register",
   "toast_collection_created": "New collection created",
   "toast_error": "Oops! An error occurred",
   "tab_manifest_url": "I have a URL",
