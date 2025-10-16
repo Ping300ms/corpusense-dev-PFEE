@@ -37,6 +37,16 @@ const useAppNavigation = () => {
   const goToWorkersManager = async () => {
     await navigate(`/${CorpusenseRoutes.WORKERS}`);
   };
+  const goToHome = async () => {
+    await navigate('/');
+  }
+
+  const goToLogin = async () => {
+    await navigate('/login');
+  }
+  const goToRegister = async () => {
+    await navigate('/register');
+  }
 
   return {
     goToManifestExplorer,
@@ -46,6 +56,9 @@ const useAppNavigation = () => {
     goToModelsManager,
     goToStorage,
     goToWorkersManager,
+    goToHome,
+    goToLogin,
+    goToRegister
   };
 };
 

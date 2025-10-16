@@ -20,6 +20,7 @@ import EditDataModelPage from '@/pages/demo/EditDataModelPage.tsx';
 import EditCollectionPage from '@/pages/demo/EditCollectionPage.tsx';
 import EditCollectionContentPage from '@/pages/demo/EditCollectionContentPage.tsx';
 import RegisterPage from '@/pages/RegisterPage.tsx';
+import LoginPage from '@/pages/LoginPage.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/';
@@ -59,7 +60,9 @@ function App() {
                 element={<WorkersManagerPage />}
               />
 
-              <Route path={`register`} element={<RegisterPage />} />
+              <Route path={'/register'} element={<RegisterPage />} />/
+              <Route path={'/login'} element={<LoginPage />} />/
+
               <Route path={`test`} element={<HomePage />} />
               <Route path="test/annotation/:id?" element={<EditAnnotationPage />} />
               <Route path="test/model/:id?" element={<EditDataModelPage />} />
