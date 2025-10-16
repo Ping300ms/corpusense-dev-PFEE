@@ -71,11 +71,11 @@ export class SupabaseRealtimeListener<T extends Record<string, any>> {
         break;
       case REALTIME_SUBSCRIBE_STATES.TIMED_OUT:
         console.log('[Realtime] TIMED_OUT', err);
-        void this.disconnect();
+        this.channel = null;
         break;
       case REALTIME_SUBSCRIBE_STATES.CLOSED:
         console.log('[Realtime] CLOSED', err);
-        void this.disconnect();
+        this.channel = null;
         break;
     }
   }

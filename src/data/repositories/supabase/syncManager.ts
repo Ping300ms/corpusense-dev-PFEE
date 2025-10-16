@@ -1,4 +1,4 @@
-import { SupabaseClient, User } from '@supabase/supabase-js';
+import { Subscription, SupabaseClient, User } from '@supabase/supabase-js';
 import { db, dbSync } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
@@ -12,19 +12,19 @@ import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseR
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
-  private connected: boolean = false;
 
   public readonly client: SupabaseClient;
   private lastPull: Date;
 
-  private dexieListener: DexieObservableListener | null = null;
   private realtimeListener: SupabaseRealtimeListener<Backup> | null = null;
+  private authStateListener: Subscription | null = null;
 
   private constructor() {
     this.client = supabase;
     this.lastPull = new Date(localStorage.getItem("LastPull") ?? '2025-01-01T00:00:00Z');
 
-    void this.initializeListeners();
+    this.initializeListeners();
+    void this.InitSync();
   }
 
   public static getInstance(): SyncManager {
@@ -32,12 +32,9 @@ export class SyncManager {
     return SyncManager.instance;
   }
 
-  private async initializeListeners() {
-    window.addEventListener('online', () => void this.InitSync);
-    window.addEventListener('offline', () => void this.CloseSync);
-
+  private initializeListeners() {
     // 1️⃣ — Dexie → Supabase
-    this.dexieListener = new DexieObservableListener(
+    new DexieObservableListener(
       db,
       {
       onAdd: async (entity, table) => {
@@ -98,7 +95,19 @@ export class SyncManager {
       }
     );
 
-    await this.getUser(); // check if connected;
+    this.authStateListener = supabase.auth.onAuthStateChange((_event) => {
+      switch (_event) {
+        case 'SIGNED_IN':
+          void this.InitSync();
+          break;
+        case 'SIGNED_OUT':
+          void this.CloseSync();
+          break;
+      }
+    }).data.subscription;
+
+    window.addEventListener('online', () => void this.InitSync);
+    window.addEventListener('offline', () => void this.CloseSync);
   }
 
   public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
@@ -339,7 +348,6 @@ export class SyncManager {
 
   public async InitSync() {
     await this.realtimeListener?.connect();
-    this.connected = true;
     for (const table of SyncableTables) {
       await this.pullUpdates(table as keyof typeof db);
     }
@@ -348,22 +356,15 @@ export class SyncManager {
 
   public async CloseSync() {
     await this.realtimeListener?.disconnect();
-    this.connected = false;
   }
 
   private async getUser(): Promise<User | null> {
-    const user = (await supabase.auth.getUser()).data.user;
-    if (user === null && this.connected) await this.CloseSync(); // TODO refactor clean spaghetti
-    if (user !== null && !this.connected) await this.InitSync();
-    return user
+    return (await supabase.auth.getUser()).data.user;
   }
 
   public async destroy(): Promise<void> {
-    if (this.dexieListener) this.dexieListener = null;
-    if (this.realtimeListener) {
-      await this.realtimeListener.destroy();
-      this.realtimeListener = null;
-    }
+    await this.realtimeListener?.destroy();
+    this.authStateListener?.unsubscribe();
     window.removeEventListener('online', () => void this.InitSync);
     window.removeEventListener('offline', () => void this.CloseSync);
   }
