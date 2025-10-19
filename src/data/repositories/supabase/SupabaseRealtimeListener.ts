@@ -1,93 +1,175 @@
 /* eslint-disable */
 import {
   REALTIME_SUBSCRIBE_STATES,
-  RealtimeChannel,
   RealtimePostgresDeletePayload,
   RealtimePostgresInsertPayload,
   RealtimePostgresUpdatePayload,
   SupabaseClient,
 } from '@supabase/supabase-js';
+import {
+  SupabaseListenerProperties
+} from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
 
-export interface OnRemoteChangeCallbacks<T> {
-  onAdd?: (entity: T) => void | Promise<void>;
-  onUpdate?: (entity: T) => void | Promise<void>;
-  onDelete?: (entity: Partial<T>) => void | Promise<void>;
-}
+export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> {
+  private backoffMultiplier: number;
+  private baseRetryDelay: number;
+  private channel: null | ReturnType<typeof this.supabaseClient.channel> = null;
+  private channelBaseName: string;
+  private databaseSchemaName: string;
+  private isRetrying = false;
+  private maxRetries: number;
+  private maxRetryDelay: number;
+  private onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
+  private onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
+  private onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  private retryCount: number;
+  private retryTimeout: ReturnType<typeof setTimeout> | undefined;
+  private supabaseClient: Pick<SupabaseClient, 'channel' | 'removeChannel' | 'auth'>;
+  private tableName: string;
 
-export class SupabaseRealtimeListener<T extends Record<string, any>> {
-  private supabase: SupabaseClient;
-  private callbacks: OnRemoteChangeCallbacks<T>;
-  private channel: RealtimeChannel | null = null;
-
-  constructor(supabase: SupabaseClient, callbacks: OnRemoteChangeCallbacks<T>) {
-    this.supabase = supabase;
-    this.callbacks = callbacks;
-
-    void this.connect();
+  constructor({
+                backoffMultiplier = 1.5,
+                baseRetryDelay = 30_000,
+                channelBaseName,
+                databaseSchemaName = 'public',
+                maxRetries = 10,
+                maxRetryDelay = 300_000,
+                onInsert,
+                onUpdate,
+                onDelete,
+                retryCount = 0,
+                supabaseClient,
+                tableName,
+              }: SupabaseListenerProperties<TableType>) {
+    this.maxRetries = maxRetries
+    this.baseRetryDelay = baseRetryDelay
+    this.maxRetryDelay = maxRetryDelay
+    this.backoffMultiplier = backoffMultiplier
+    this.retryCount = retryCount
+    this.tableName = tableName
+    this.onInsert = onInsert
+    this.onUpdate = onUpdate;
+    this.onDelete = onDelete;
+    this.channelBaseName = channelBaseName
+    this.supabaseClient = supabaseClient
+    this.databaseSchemaName = databaseSchemaName
   }
 
-  public async connect() {
-    if (this.channel) return;
+  public removeExistingChannel = async () => {
+    if (!this.channel) return
 
-    const user = (await this.supabase.auth.getUser()).data.user;
-    if (user === null) return;
+    try {
+      await this.supabaseClient.removeChannel(this.channel)
+      console.info(`Realtime channel (${this.channel.topic}) cleaned up`)
+    } catch (error) {
+      console.error(`Error cleaning up old channel:`, error)
+    } finally {
+      this.channel = null
+    }
+  }
 
-    // Maybe split into multiple channels ?
-    this.channel = this.supabase.channel('backup-changes');
+  private resetRetries = () => {
+    this.isRetrying = false
+    this.retryCount = 0
+
+    clearTimeout(this.retryTimeout)
+    this.retryTimeout = undefined
+  }
+
+  private retryToSubscribe = async () => {
+    this.isRetrying = true
+    this.retryCount += 1
+
+    if (this.retryCount > this.maxRetries) {
+      console.error(`Max retries (${this.maxRetries}) exceeded`)
+
+      return
+    }
+
+    const delay = Math.min(this.baseRetryDelay * Math.pow(this.backoffMultiplier, this.retryCount - 1), this.maxRetryDelay)
+
+    console.warn(`Retry attempt ${this.retryCount} in ${Math.round(delay / 1000)}s`)
+
+    clearTimeout(this.retryTimeout)
+    this.retryTimeout = setTimeout(() => {
+      this.isRetrying = false
+      this.subscribe()
+    }, delay)
+  }
+
+  subscribe = async () => {
+    await this.removeExistingChannel()
+
+    console.info('Creating new realtime subscription...')
+
+    const user = (await this.supabaseClient.auth.getUser()).data.user;
+    if (user === null) {
+      console.log('User is not authenticated');
+      return; // simply cancel, will retry to subscribe when Auth State change in SyncManager
+    }
+
+    // Add Date.now() to exclude collision between retries
+    const channelName = `${this.channelBaseName}-${Date.now()}`
+
+    console.info(`Channel name is: ${channelName}`)
+
+    this.channel = this.supabaseClient.channel(channelName)
+
     this.channel
-      .on(
+      .on<TableType>('postgres_changes',
+        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        (payload: RealtimePostgresInsertPayload<TableType>) => {
+        console.info('Insert received:', payload)
+        void this.onInsert?.(payload);
+      })
+      .on<TableType>(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresInsertPayload<T>) => {
-          void this.callbacks.onAdd?.(payload.new);
+        { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        (payload: RealtimePostgresUpdatePayload<TableType>) => {
+          console.info('Insert received:', payload)
+          void this.onUpdate?.(payload);
         },
       )
-      .on(
+      .on<TableType>(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresUpdatePayload<T>) => {
-          void this.callbacks.onUpdate?.(payload.new);
+        { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        (payload: RealtimePostgresDeletePayload<TableType>) => {
+          console.info('Insert received:', payload)
+          void this.onDelete?.(payload);
         },
       )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'backup', filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresDeletePayload<T>) => {
-          void this.callbacks.onDelete?.(payload.old);
-        },
-      )
-      .subscribe((status, err) =>
-        this.subscribeStateHandler(status, err)
-      );
+      .subscribe(async (status, error) => {
+        return this.subscribeStateHandler(status, error);
+      })
   }
 
-  private subscribeStateHandler(status: REALTIME_SUBSCRIBE_STATES, err?: Error) {
-    switch (status) {
-      case REALTIME_SUBSCRIBE_STATES.SUBSCRIBED:
-        console.log('[Realtime] SUBSCRIBED', err);
-        break;
-      case REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR:
-        console.log('[Realtime] CHANNEL_ERROR', err);
-        break;
-      case REALTIME_SUBSCRIBE_STATES.TIMED_OUT:
-        console.log('[Realtime] TIMED_OUT', err);
-        this.channel = null;
-        break;
-      case REALTIME_SUBSCRIBE_STATES.CLOSED:
-        console.log('[Realtime] CLOSED', err);
-        this.channel = null;
-        break;
+  private async subscribeStateHandler(status: REALTIME_SUBSCRIBE_STATES, error?: Error) {
+    console.info(`Channel status: ${status}`)
+
+    if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+      console.info('Realtime subscription established')
+
+      this.resetRetries()
+
+      return
     }
-  }
 
-  public async disconnect() {
-    if (this.channel) {
-      await this.supabase.removeChannel(this.channel);
-      this.channel = null;
+    if (this.isRetrying) {
+      console.warn(`Skipping retry due to: isRetrying = ${this.isRetrying}`)
+
+      return
     }
-  }
 
-  public async destroy() {
-    if (this.channel) await this.disconnect();
+    if (status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR) {
+      console.error("Can't subscribe on channel:", error)
+    }
+
+    if (
+      status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+      status === REALTIME_SUBSCRIBE_STATES.CLOSED ||
+      status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
+    ) {
+      await this.retryToSubscribe()
+    }
   }
 }

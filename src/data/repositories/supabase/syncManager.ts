@@ -1,4 +1,11 @@
-import { Subscription, SupabaseClient, User } from '@supabase/supabase-js';
+import {
+  RealtimePostgresDeletePayload,
+  RealtimePostgresInsertPayload,
+  RealtimePostgresUpdatePayload,
+  Subscription,
+  SupabaseClient,
+  User,
+} from '@supabase/supabase-js';
 import { db, dbSync } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
@@ -9,6 +16,7 @@ import { syncableToUint8, uint8ToSyncable, mergeDocs, encodeDocToJSONB, decodeDo
 import Backup from '@/data/models/Backup.ts';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
 import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseRealtimeListener.ts';
+import { SupabaseListenerProperties } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
@@ -37,63 +45,21 @@ export class SyncManager {
     new DexieObservableListener(
       db,
       {
-      onAdd: async (entity, table) => {
-        const pendingId = await this.isPendingOperation("CREATE", "DEXIE", table, entity.id)
-        if (pendingId !== null) {
-          await this.removePendingOperation(pendingId);
-          return;
-        }
-        console.log(`[Dexie] Added ${table} → pushing to Supabase`);
-        await this.create(entity, table as keyof typeof db);
-      },
-      onUpdate: async (entity, table) => {
-        const pendingId = await this.isPendingOperation("UPDATE", "DEXIE", table, entity.id)
-        if (pendingId !== null) {
-          await this.removePendingOperation(pendingId);
-          return;
-        }
-        console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
-        await this.push(entity, table as keyof typeof db);
-      },
-      onDelete: async (key, table) => {
-        const pendingId = await this.isPendingOperation("DELETE", "DEXIE", table, key)
-        if (pendingId !== null) {
-          await this.removePendingOperation(pendingId);
-          return;
-        }
-        console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
-        await this.delete(key, table as keyof typeof db);
-      },
+      onAdd: (entity, table) => this.onLocalInsert(entity, table),
+      onUpdate: (entity, table) => this.onLocalUpdate(entity, table),
+      onDelete: (key, table) => this.onLocalDelete(key, table),
     });
 
     // 2️⃣ — Supabase → Dexie
     this.realtimeListener = new SupabaseRealtimeListener<Backup>(
-      this.client,
       {
-        onAdd: async (backup) => {
-          const pendingId = await this.isPendingOperation("CREATE", "SUPABASE", backup.object_type, backup.object_id)
-          if (pendingId !== null) {
-            await this.removePendingOperation(pendingId);
-            return;
-          }
-          console.log(`[Supabase] Add ${backup.object_type} → adding to dexie`);
-          await this.applyRemoteChange(backup);
-        },
-        onUpdate: async (backup) => {
-          const pendingId = await this.isPendingOperation(backup.deleted_at !== null ? "DELETE" : "UPDATE", "SUPABASE", backup.object_type, backup.object_id)
-          if (pendingId !== null) {
-            await this.removePendingOperation(pendingId);
-            return;
-          }
-          console.log(`[Supabase] Updated ${backup.object_type} → update in dexie`, uint8ToSyncable(decodeDocFromJSONB(backup.content)));
-          await this.applyRemoteChange(backup);
-        },
-        onDelete: async (backup) => {
-          console.log(`[Supabase] Delete ${backup.object_type} → delete in dexie`);
-          await this.applyRemoteDelete(backup);
-        },
-      }
-    );
+        tableName : "backup",
+        channelBaseName : "backup", // TODO change channel naming to fit with collaboration logic
+        onInsert : (p) => this.onRemoteInsert(p),
+        onUpdate : (p) => this.onRemoteUpdate(p),
+        onDelete : (p) => this.onRemoteDelete(p),
+        supabaseClient : supabase
+      } as SupabaseListenerProperties<Backup>);
 
     this.authStateListener = supabase.auth.onAuthStateChange((_event) => {
       switch (_event) {
@@ -310,6 +276,72 @@ export class SyncManager {
     return res;
   }
 
+  private async onLocalInsert(entity : SyncableObject, table : string) {
+    const pendingId = await this.isPendingOperation("CREATE", "DEXIE", table, entity.id)
+    if (pendingId !== null) {
+      await this.removePendingOperation(pendingId);
+      return;
+    }
+    console.log(`[Dexie] Added ${table} → pushing to Supabase`);
+    await this.create(entity, table as keyof typeof db);
+  }
+
+  private async onLocalUpdate(entity : SyncableObject, table : string) {
+    const pendingId = await this.isPendingOperation("UPDATE", "DEXIE", table, entity.id)
+    if (pendingId !== null) {
+      await this.removePendingOperation(pendingId);
+      return;
+    }
+    console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
+    await this.push(entity, table as keyof typeof db);
+  }
+
+  private async onLocalDelete(key : string, table : string) {
+    const pendingId = await this.isPendingOperation("DELETE", "DEXIE", table, key)
+    if (pendingId !== null) {
+      await this.removePendingOperation(pendingId);
+      return;
+    }
+    console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
+    await this.delete(key, table as keyof typeof db);
+  }
+
+  private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
+    const pendingId = await this.isPendingOperation(
+      "CREATE",
+      "SUPABASE",
+      payload.new.object_type,
+      payload.new.object_id
+    )
+    if (pendingId !== null) {
+      await this.removePendingOperation(pendingId);
+      return;
+    }
+    console.log(`[Supabase] Add ${payload.new.object_type} → adding to dexie`);
+    await this.applyRemoteChange(payload.new);
+  }
+
+  private async onRemoteUpdate(payload: RealtimePostgresUpdatePayload<Backup>) : Promise<void> {
+    const pendingId = await this.isPendingOperation(
+      payload.new.deleted_at !== null ? "DELETE" : "UPDATE",
+      "SUPABASE",
+      payload.new.object_type,
+      payload.new.object_id
+    )
+    if (pendingId !== null) {
+      await this.removePendingOperation(pendingId);
+      return;
+    }
+    console.log(`[Supabase] Updated ${payload.new.object_type} → update in dexie`, uint8ToSyncable(decodeDocFromJSONB(payload.new.content)));
+    await this.applyRemoteChange(payload.new);
+  }
+
+  private async onRemoteDelete(payload: RealtimePostgresDeletePayload<Backup>) : Promise<void> {
+    if (payload.old == null) return;
+    console.log(`[Supabase] Delete ${payload.old.object_type} → delete in dexie`);
+    await this.applyRemoteDelete(payload.old);
+  }
+
   private async applyRemoteChange(backup: Backup): Promise<void> {
     if (backup.deleted_at != null) { // remote has been soft deleted
       await this.addPendingOperation("DELETE", "DEXIE", backup.object_type, backup.object_id);
@@ -347,7 +379,7 @@ export class SyncManager {
   }
 
   public async InitSync() {
-    await this.realtimeListener?.connect();
+    await this.realtimeListener?.subscribe();
     for (const table of SyncableTables) {
       await this.pullUpdates(table as keyof typeof db);
     }
@@ -355,7 +387,7 @@ export class SyncManager {
   }
 
   public async CloseSync() {
-    await this.realtimeListener?.disconnect();
+    await this.realtimeListener?.removeExistingChannel();
   }
 
   private async getUser(): Promise<User | null> {
@@ -363,7 +395,7 @@ export class SyncManager {
   }
 
   public async destroy(): Promise<void> {
-    await this.realtimeListener?.destroy();
+    await this.realtimeListener?.removeExistingChannel();
     this.authStateListener?.unsubscribe();
     window.removeEventListener('online', () => void this.InitSync);
     window.removeEventListener('offline', () => void this.CloseSync);
