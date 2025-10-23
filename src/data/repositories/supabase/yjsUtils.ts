@@ -7,9 +7,13 @@ import { Doc } from 'yjs';
  * Convert Syncable → CRDT
  */
 export function syncableToUint8(obj: any): Uint8Array {
+  return Y.encodeStateAsUpdateV2(syncableToDoc(obj));
+}
+
+export function syncableToDoc(obj: any): Doc {
   const doc = new Y.Doc();
   doc.getMap("content").set("root", DocBuilder(obj));
-  return Y.encodeStateAsUpdateV2(doc);
+  return doc;
 }
 
 export function DocBuilder(obj: any): Y.Map<any> {
@@ -25,7 +29,6 @@ export function DocBuilder(obj: any): Y.Map<any> {
     if (Array.isArray(v)) {
       const yarr = new Y.Array();
       for (const el of v) {
-        console.log(typeof el);
         if (typeof el === "object" && el !== null) yarr.push([DocBuilder(el)]);
         // TODO check possible nested long text
         else yarr.push([el]);
@@ -49,7 +52,10 @@ export function DocBuilder(obj: any): Y.Map<any> {
  * Convert CRDT → Syncable
  */
 export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
-  const doc = uint8toDoc(update);
+  return docToSyncable(uint8toDoc(update));
+}
+
+export function docToSyncable<T extends Syncable>(doc: Doc): T {
   const content = doc.getMap<any>("content");
   const rootMap = content.get("root") as Y.Map<any>;
 

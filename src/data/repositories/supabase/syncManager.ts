@@ -21,29 +21,40 @@ import { SupabaseListenerProperties } from '@/data/repositories/supabase/Supabas
 export class SyncManager {
   private static instance: SyncManager | null = null;
 
-  public readonly client: SupabaseClient;
+  private readonly client: SupabaseClient;
+  private readonly dbToSync: typeof db;
+  private readonly operationDb: typeof dbSync;
   private lastPull: Date;
 
   private realtimeListener: SupabaseRealtimeListener<Backup> | null = null;
   private authStateListener: Subscription | null = null;
 
-  private constructor() {
-    this.client = supabase;
+  private constructor(client: SupabaseClient = supabase,
+                      dbToSync: typeof db = db,
+                      operationDb: typeof dbSync = dbSync
+  ) {
+    this.client = client;
+    this.dbToSync = dbToSync;
+    this.operationDb = operationDb;
     this.lastPull = new Date(localStorage.getItem("LastPull") ?? '2025-01-01T00:00:00Z');
 
     this.initializeListeners();
     void this.InitSync();
   }
 
-  public static getInstance(): SyncManager {
-    if (!SyncManager.instance) SyncManager.instance = new SyncManager();
+  public static getInstance(
+    client: typeof supabase = supabase,
+    dbToSync: typeof db = db,
+    operationDb: typeof dbSync= dbSync
+  ): SyncManager {
+    if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
     return SyncManager.instance;
   }
 
   private initializeListeners() {
     // 1️⃣ — Dexie → Supabase
     new DexieObservableListener(
-      db,
+      this.dbToSync,
       {
       onAdd: (entity, table) => this.onLocalInsert(entity, table),
       onUpdate: (entity, table) => this.onLocalUpdate(entity, table),
@@ -58,10 +69,10 @@ export class SyncManager {
         onInsert : (p) => this.onRemoteInsert(p),
         onUpdate : (p) => this.onRemoteUpdate(p),
         onDelete : (p) => this.onRemoteDelete(p),
-        supabaseClient : supabase
+        supabaseClient : this.client,
       } as SupabaseListenerProperties<Backup>);
 
-    this.authStateListener = supabase.auth.onAuthStateChange((_event) => {
+    this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
       switch (_event) {
         case 'SIGNED_IN':
           void this.InitSync();
@@ -76,7 +87,7 @@ export class SyncManager {
     window.addEventListener('offline', () => void this.CloseSync);
   }
 
-  public async create<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
+  public async create<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | { error: string }> {
     await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
     const user = await this.getUser();
     if (!user) return { error: `[CREATE] Sync: error not logged in`};
@@ -97,7 +108,7 @@ export class SyncManager {
     return obj;
   }
 
-  public async delete(id: string, type: keyof typeof db): Promise<void | { error: string }> {
+  public async delete(id: string, type: keyof typeof this.dbToSync): Promise<void | { error: string }> {
     await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
     const user = await this.getUser();
@@ -115,7 +126,7 @@ export class SyncManager {
     if (error) return { error: `[DELETE] Sync: error deleting from supabase ${type} ${id} ${error.message}` };
   }
 
-  public async push<T extends Syncable>(obj: T, type: keyof typeof db): Promise<T | { error: string }> {
+  public async push<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | { error: string }> {
     await this.addPendingOperation("UPDATE", "SUPABASE", type, obj.id);
 
     const user = await this.getUser();
@@ -157,7 +168,7 @@ export class SyncManager {
   }
 
   public async pushPendingOperations(): Promise<void> {
-    const pending = await dbSync.pendingOperations.orderBy('date')
+    const pending = await this.operationDb.pendingOperations.orderBy('date')
       .filter((op) => op.location === "SUPABASE"
     ).toArray();
 
@@ -166,19 +177,19 @@ export class SyncManager {
 
       switch (op.type) {
         case "CREATE": {
-          const table = db[op.table as keyof typeof db] as EntityTable<SyncableObject, 'id'>;
+          const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
-          if (obj) await this.create(obj, op.table as keyof typeof db);
+          if (obj) await this.create(obj, op.table as keyof typeof this.dbToSync);
           break;
         }
         case "UPDATE": {
-          const table = db[op.table as keyof typeof db] as EntityTable<SyncableObject, 'id'>;
+          const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
-          if (obj) await this.push(obj, op.table as keyof typeof db);
+          if (obj) await this.push(obj, op.table as keyof typeof this.dbToSync);
           break;
         }
         case "DELETE": {
-          await this.delete(op.object_id, op.table as keyof typeof db);
+          await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
           break;
         }
       }
@@ -232,7 +243,7 @@ export class SyncManager {
     await dbSync.pendingOperations.delete(id);
   }
 
-  public async pullUpdates<T extends Syncable>(type: keyof typeof db): Promise<T[] | { error: string }> {
+  public async pullUpdates<T extends Syncable>(type: keyof typeof this.dbToSync): Promise<T[] | { error: string }> {
     const user = await this.getUser();
     if (!user) return { error: `[SELECT] Sync: error not logged in` };
 
@@ -250,7 +261,7 @@ export class SyncManager {
 
     // TODO optimize read/write with bulk on dexie
     // TODO handle errors: make it transactional or don't update lastPull if error
-    const table = db[type] as unknown as EntityTable<T, 'id'>;
+    const table = this.dbToSync[type] as unknown as EntityTable<T, 'id'>;
     const locals = await table.toArray();
     const localMap = new Map<string, T>(locals.map(obj => [obj.id, obj]));
 
@@ -283,7 +294,7 @@ export class SyncManager {
       return;
     }
     console.log(`[Dexie] Added ${table} → pushing to Supabase`);
-    await this.create(entity, table as keyof typeof db);
+    await this.create(entity, table as keyof typeof this.dbToSync);
   }
 
   private async onLocalUpdate(entity : SyncableObject, table : string) {
@@ -293,7 +304,7 @@ export class SyncManager {
       return;
     }
     console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
-    await this.push(entity, table as keyof typeof db);
+    await this.push(entity, table as keyof typeof this.dbToSync);
   }
 
   private async onLocalDelete(key : string, table : string) {
@@ -303,7 +314,7 @@ export class SyncManager {
       return;
     }
     console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
-    await this.delete(key, table as keyof typeof db);
+    await this.delete(key, table as keyof typeof this.dbToSync);
   }
 
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
@@ -351,7 +362,7 @@ export class SyncManager {
 
     const { object_id, object_type, content } = backup;
     const remote = decodeDocFromJSONB(content);
-    const table = db[object_type as keyof typeof db] as unknown as EntityTable<SyncableObject, 'id'>;
+    const table = this.dbToSync[object_type as keyof typeof this.dbToSync] as unknown as EntityTable<SyncableObject, 'id'>;
     const local = await table.get(object_id);
 
     if (local === undefined) { // local doesn't exist
@@ -372,7 +383,7 @@ export class SyncManager {
     const { object_id, object_type } = backup;
     if (object_id === undefined) return;
 
-    const table = db[object_type as keyof typeof db] as unknown as EntityTable<SyncableObject, 'id'>;
+    const table = this.dbToSync[object_type as keyof typeof this.dbToSync] as unknown as EntityTable<SyncableObject, 'id'>;
 
     console.log(`[Supabase] Deleting remote ${object_type} ${object_id}`);
     await table.delete(object_id);
@@ -381,7 +392,7 @@ export class SyncManager {
   public async InitSync() {
     await this.realtimeListener?.subscribe();
     for (const table of SyncableTables) {
-      await this.pullUpdates(table as keyof typeof db);
+      await this.pullUpdates(table as keyof typeof this.dbToSync);
     }
     await this.pushPendingOperations();
   }
@@ -391,7 +402,7 @@ export class SyncManager {
   }
 
   private async getUser(): Promise<User | null> {
-    return (await supabase.auth.getUser()).data.user;
+    return (await this.client.auth.getUser()).data.user;
   }
 
   public async destroy(): Promise<void> {
