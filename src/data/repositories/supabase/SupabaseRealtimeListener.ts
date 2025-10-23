@@ -53,6 +53,8 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.channelBaseName = channelBaseName
     this.supabaseClient = supabaseClient
     this.databaseSchemaName = databaseSchemaName
+
+    console.error("TADA");
   }
 
   public removeExistingChannel = async () => {

@@ -53,11 +53,12 @@ export class SyncManager {
 
   private initializeListeners() {
     // 1️⃣ — Dexie → Supabase
+    console.log("Initializing listeners");
     new DexieObservableListener(
       this.dbToSync,
       {
       onAdd: (entity, table) => this.onLocalInsert(entity, table),
-      onUpdate: (entity, table) => this.onLocalUpdate(entity, table),
+        onUpdate: (entity, table) => this.onLocalUpdate(entity, table),
       onDelete: (key, table) => this.onLocalDelete(key, table),
     });
 
@@ -72,7 +73,7 @@ export class SyncManager {
         supabaseClient : this.client,
       } as SupabaseListenerProperties<Backup>);
 
-    this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
+    /*this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
       switch (_event) {
         case 'SIGNED_IN':
           void this.InitSync();
@@ -81,16 +82,17 @@ export class SyncManager {
           void this.CloseSync();
           break;
       }
-    }).data.subscription;
+    }).data.subscription; */
 
     window.addEventListener('online', () => void this.InitSync);
     window.addEventListener('offline', () => void this.CloseSync);
   }
 
-  public async create<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | { error: string }> {
+  public async create<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | null> {
     await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
     const user = await this.getUser();
-    if (!user) return { error: `[CREATE] Sync: error not logged in`};
+    if (!user)
+      return null;
 
     const update = syncableToUint8(obj);
 
@@ -103,7 +105,10 @@ export class SyncManager {
       deleted_at: null,
     });
 
-    if (error) return { error: `[CREATE] Sync: error inserting into supabase ${type} ${obj.id} ${error.message}` };
+    if (error) {
+      return null;
+    }
+
 
     return obj;
   }
@@ -294,7 +299,9 @@ export class SyncManager {
       return;
     }
     console.log(`[Dexie] Added ${table} → pushing to Supabase`);
-    await this.create(entity, table as keyof typeof this.dbToSync);
+    const inserted = await this.create(entity, table as keyof typeof this.dbToSync);
+    if (!inserted)
+      await this.removePendingOperation(pendingId)
   }
 
   private async onLocalUpdate(entity : SyncableObject, table : string) {
