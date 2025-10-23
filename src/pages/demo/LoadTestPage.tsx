@@ -50,6 +50,7 @@ export default function LoadTestPage() {
         await db.collections.put(collection);
         await sleep(1000);
         await db.collections.delete(collection.id);
+        await sleep(1000);
       }
     };
     void run();
