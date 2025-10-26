@@ -10,22 +10,30 @@ import {
   SupabaseListenerProperties
 } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
 
+enum ListenerState {
+  DISCONNECTED = 'disconnected',
+  SUBSCRIBING = 'subscribing',
+  SUBSCRIBED = 'subscribed',
+}
+
 export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> {
-  private backoffMultiplier: number;
-  private baseRetryDelay: number;
+  private readonly backoffMultiplier: number;
+  private readonly baseRetryDelay: number;
   private channel: null | ReturnType<typeof this.supabaseClient.channel> = null;
-  private channelBaseName: string;
-  private databaseSchemaName: string;
+  private readonly channelBaseName: string;
+  private readonly databaseSchemaName: string;
   private isRetrying = false;
-  private maxRetries: number;
-  private maxRetryDelay: number;
-  private onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
-  private onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
-  private onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  private readonly maxRetries: number;
+  private readonly maxRetryDelay: number;
+  private readonly onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
+  private readonly onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
+  private readonly onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  private readonly onSubscribed?: () => void | Promise<void>;
   private retryCount: number;
   private retryTimeout: ReturnType<typeof setTimeout> | undefined;
-  private supabaseClient: Pick<SupabaseClient, 'channel' | 'removeChannel' | 'auth'>;
-  private tableName: string;
+  private readonly supabaseClient: Pick<SupabaseClient, 'channel' | 'removeChannel' | 'auth'>;
+  private readonly tableName: string;
+  private listenerState: ListenerState = ListenerState.DISCONNECTED;
 
   constructor({
                 backoffMultiplier = 1.5,
@@ -37,6 +45,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
                 onInsert,
                 onUpdate,
                 onDelete,
+                onSubscribed,
                 retryCount = 0,
                 supabaseClient,
                 tableName,
@@ -50,6 +59,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.onInsert = onInsert
     this.onUpdate = onUpdate;
     this.onDelete = onDelete;
+    this.onSubscribed = onSubscribed;
     this.channelBaseName = channelBaseName
     this.supabaseClient = supabaseClient
     this.databaseSchemaName = databaseSchemaName
@@ -60,11 +70,12 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
 
     try {
       await this.supabaseClient.removeChannel(this.channel)
-      console.info(`Realtime channel (${this.channel.topic}) cleaned up`)
+      console.info(`Realtime channel (${this.channel.topic}) cleaned up`);
     } catch (error) {
       console.error(`Error cleaning up old channel:`, error)
     } finally {
       this.channel = null
+      this.listenerState = ListenerState.DISCONNECTED;
     }
   }
 
@@ -98,13 +109,17 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
   }
 
   subscribe = async () => {
-    await this.removeExistingChannel()
+    if (this.listenerState === ListenerState.SUBSCRIBING ||
+      this.listenerState === ListenerState.SUBSCRIBED) return; // prevent multiple subscribe
+    this.listenerState = ListenerState.SUBSCRIBING;
 
+    await this.removeExistingChannel()
     console.info('Creating new realtime subscription...')
 
     const user = (await this.supabaseClient.auth.getUser()).data.user;
     if (user === null) {
       console.log('User is not authenticated');
+      this.resetRetries();
       return; // simply cancel, will retry to subscribe when Auth State change in SyncManager
     }
 
@@ -148,9 +163,9 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
 
     if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
       console.info('Realtime subscription established')
-
-      this.resetRetries()
-
+      this.listenerState = ListenerState.SUBSCRIBED;
+      this.resetRetries();
+      this.onSubscribed?.();
       return
     }
 
@@ -169,6 +184,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
       status === REALTIME_SUBSCRIBE_STATES.CLOSED ||
       status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
     ) {
+      this.listenerState = ListenerState.DISCONNECTED;
       await this.retryToSubscribe()
     }
   }

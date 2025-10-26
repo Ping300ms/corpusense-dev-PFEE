@@ -4,7 +4,6 @@ import {
   RealtimePostgresUpdatePayload,
   Subscription,
   SupabaseClient,
-  User,
 } from '@supabase/supabase-js';
 import { db, dbSync } from "@/data/repositories/indexeddb/db.ts";
 import { EntityTable } from "dexie";
@@ -25,6 +24,7 @@ export class SyncManager {
   private readonly dbToSync: typeof db;
   private readonly operationDb: typeof dbSync;
   private lastPull: Date;
+  private userId: string | null = null;
 
   private realtimeListener: SupabaseRealtimeListener<Backup> | null = null;
   private authStateListener: Subscription | null = null;
@@ -39,7 +39,6 @@ export class SyncManager {
     this.lastPull = new Date(localStorage.getItem("LastPull") ?? '2025-01-01T00:00:00Z');
 
     this.initializeListeners();
-    void this.InitSync();
   }
 
   public static getInstance(
@@ -69,33 +68,36 @@ export class SyncManager {
         onInsert : (p) => this.onRemoteInsert(p),
         onUpdate : (p) => this.onRemoteUpdate(p),
         onDelete : (p) => this.onRemoteDelete(p),
+        onSubscribed : () => this.InitSync(),
         supabaseClient : this.client,
       } as SupabaseListenerProperties<Backup>);
 
     this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
       switch (_event) {
         case 'SIGNED_IN':
-          void this.InitSync();
+          void this.realtimeListener?.subscribe();
+          void this.getUser();
           break;
         case 'SIGNED_OUT':
-          void this.CloseSync();
+          void this.realtimeListener?.removeExistingChannel();
+          this.userId = null;
           break;
       }
     }).data.subscription;
 
-    window.addEventListener('online', () => void this.InitSync);
-    window.addEventListener('offline', () => void this.CloseSync);
+    window.addEventListener('online', () => void this.realtimeListener?.subscribe());
+    window.addEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
   }
 
   public async create<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | { error: string }> {
     await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
-    const user = await this.getUser();
-    if (!user) return { error: `[CREATE] Sync: error not logged in`};
+    const userId = await this.getUser();
+    if (!userId) return { error: `[CREATE] Sync: error not logged in`};
 
     const update = syncableToUint8(obj);
 
     const { error } = await this.client.from('backup').insert<Backup>({
-      user_id: user.id,
+      user_id: userId,
       object_id: obj.id,
       object_type: type,
       content: encodeDocToJSONB(update),
@@ -111,14 +113,14 @@ export class SyncManager {
   public async delete(id: string, type: keyof typeof this.dbToSync): Promise<void | { error: string }> {
     await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
-    const user = await this.getUser();
-    if (!user) return { error: `[DELETE] Sync: error not logged in`};
+    const userId = await this.getUser();
+    if (!userId) return { error: `[DELETE] Sync: error not logged in`};
 
     const deletion_date = new Date().toISOString();
     const { error } = await this.client
       .from('backup')
       .update({ deleted_at: deletion_date, updated_at: deletion_date })
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('object_id', id)
       .eq('object_type', type)
       .maybeSingle<Backup>();
@@ -129,15 +131,15 @@ export class SyncManager {
   public async push<T extends Syncable>(obj: T, type: keyof typeof this.dbToSync): Promise<T | { error: string }> {
     await this.addPendingOperation("UPDATE", "SUPABASE", type, obj.id);
 
-    const user = await this.getUser();
-    if (!user) return { error: `[UPDATE] Sync: error not logged in`};
+    const userId = await this.getUser();
+    if (!userId) return { error: `[UPDATE] Sync: error not logged in`};
 
     const localUpdate = syncableToUint8(obj);
 
     const { data: remote, error } = await this.client
       .from('backup')
       .select('content, updated_at, deleted_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('object_id', obj.id)
       .eq('object_type', type)
       .maybeSingle<Backup>();
@@ -152,7 +154,7 @@ export class SyncManager {
 
     const { error: upsertError } = await this.client.from('backup').upsert<Backup>(
       {
-        user_id: user.id,
+        user_id: userId,
         object_id: obj.id,
         object_type: type,
         content: encodeDocToJSONB(mergedUpdate),
@@ -171,6 +173,7 @@ export class SyncManager {
     const pending = await this.operationDb.pendingOperations.orderBy('date')
       .filter((op) => op.location === "SUPABASE"
     ).toArray();
+    // FIXME : error handler 406 et 409
 
     for (const op of pending) {
       console.log(`[SyncManager] Replaying pending ${op.type} → ${op.table}:${op.object_id}`);
@@ -252,7 +255,7 @@ export class SyncManager {
     const { data: remotes, error } = await this.client
       .from('backup')
       .select('object_id, content, updated_at, deleted_at')
-      .eq('user_id', user.id)
+      .eq('user_id', user)
       .eq('object_type', type)
       .gt('updated_at', this.lastPull.toISOString());
 
@@ -260,7 +263,6 @@ export class SyncManager {
     if (remotes == null || remotes.length === 0) return [];
 
     // TODO optimize read/write with bulk on dexie
-    // TODO handle errors: make it transactional or don't update lastPull if error
     const table = this.dbToSync[type] as unknown as EntityTable<T, 'id'>;
     const locals = await table.toArray();
     const localMap = new Map<string, T>(locals.map(obj => [obj.id, obj]));
@@ -390,25 +392,23 @@ export class SyncManager {
   }
 
   public async InitSync() {
-    await this.realtimeListener?.subscribe();
     for (const table of SyncableTables) {
       await this.pullUpdates(table as keyof typeof this.dbToSync);
+      // FIXME cas delete from remote et pending operation push update sur une entité delete
     }
     await this.pushPendingOperations();
   }
 
-  public async CloseSync() {
-    await this.realtimeListener?.removeExistingChannel();
-  }
-
-  private async getUser(): Promise<User | null> {
-    return (await this.client.auth.getUser()).data.user;
+  private async getUser(): Promise<string | null> {
+    if (this.userId == null)
+      this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
+    return this.userId;
   }
 
   public async destroy(): Promise<void> {
     await this.realtimeListener?.removeExistingChannel();
     this.authStateListener?.unsubscribe();
-    window.removeEventListener('online', () => void this.InitSync);
-    window.removeEventListener('offline', () => void this.CloseSync);
+    window.removeEventListener('online', () => void this.realtimeListener?.subscribe());
+    window.removeEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
   }
 }

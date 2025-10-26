@@ -51,6 +51,10 @@ export interface SupabaseListenerProperties<TableType extends { [key: string]: a
    */
   onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
   /**
+   * SUBSCRIBED event handler. Called on channel subscribed
+   */
+  onSubscribed?: () => void | Promise<void>;
+  /**
    * The number of reconnection attempts made since the last successful subscription
    */
   retryCount?: number
