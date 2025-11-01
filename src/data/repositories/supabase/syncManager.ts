@@ -192,18 +192,34 @@ export class SyncManager {
         case "CREATE": {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
-          if (obj) await this.create(obj, op.table as keyof typeof this.dbToSync);
-          break;
+          if (!obj) {
+            await this.removePendingOperation('CREATE', 'SUPABASE', op.table, op.object_id);
+            return;
+          }
+          const res = await this.create(obj, op.table as keyof typeof this.dbToSync);
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'CREATE', res.error);
+          return;
         }
         case "UPDATE": {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
-          if (obj) await this.push(obj, op.table as keyof typeof this.dbToSync);
-          break;
+          if (!obj) {
+            await this.removePendingOperation('UPDATE', 'SUPABASE', op.table, op.object_id);
+            return;
+          }
+          const res = await this.push(obj, op.table as keyof typeof this.dbToSync);
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'UPDATE', res.error);
+          return;
         }
         case "DELETE": {
-          await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
-          break;
+          const obj = await this.client.from('backup').select('*').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
+          if (obj.data == null) {
+            await this.removePendingOperation('DELETE', 'SUPABASE', op.table, op.object_id);
+            return;
+          }
+          const res = await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'DELETE', res.error);
+          return;
         }
       }
     }
