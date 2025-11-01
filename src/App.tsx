@@ -21,6 +21,7 @@ import EditCollectionPage from '@/pages/demo/EditCollectionPage.tsx';
 import EditCollectionContentPage from '@/pages/demo/EditCollectionContentPage.tsx';
 import RegisterPage from '@/pages/RegisterPage.tsx';
 import LoginPage from '@/pages/LoginPage.tsx';
+import BulkPage from '@/pages/demo/BulkPage.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/';
@@ -68,6 +69,7 @@ function App() {
               <Route path="test/model/:id?" element={<EditDataModelPage />} />
               <Route path="test/collection/:id?" element={<EditCollectionPage />} />
               <Route path="test/collection-content/:id?" element={<EditCollectionContentPage />} />
+              <Route path="test/bulk" element={<BulkPage />} />
             </Route>
           </Routes>
         </AlertDialogProvider>

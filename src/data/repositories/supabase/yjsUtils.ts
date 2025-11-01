@@ -1,7 +1,7 @@
 /* eslint-disable */
 import * as Y from "yjs";
-import { Syncable } from "@/data/models/Syncable.ts";
 import { Doc } from 'yjs';
+import { SyncableObject } from '@/data/models/Syncable.ts';
 
 /**
  * Convert Syncable → CRDT
@@ -51,17 +51,17 @@ export function DocBuilder(obj: any): Y.Map<any> {
 /**
  * Convert CRDT → Syncable
  */
-export function uint8ToSyncable<T extends Syncable>(update: Uint8Array): T {
+export function uint8ToSyncable(update: Uint8Array): SyncableObject {
   return docToSyncable(uint8toDoc(update));
 }
 
-export function docToSyncable<T extends Syncable>(doc: Doc): T {
+export function docToSyncable(doc: Doc): SyncableObject {
   const content = doc.getMap<any>("content");
   const rootMap = content.get("root") as Y.Map<any>;
 
   if (!rootMap) throw new Error("Root node not found in Y.Doc");
 
-  return mapToObject(rootMap) as T;
+  return mapToObject(rootMap) as SyncableObject;
 }
 
 function mapToObject(map: Y.Map<any>): any {
@@ -89,30 +89,31 @@ export function uint8toDoc(arr: Uint8Array) {
 /**
  * Merge two CRDT docs
  */
-export function mergeDocs(localDoc: Doc, remoteDoc: Doc) {
-  let local = Y.encodeStateAsUpdateV2(localDoc)
-  let remote = Y.encodeStateAsUpdateV2(remoteDoc)
+// FIXME
+export function mergeDocs(local : {doc : Doc, date : Date}, remote : {doc : Doc, date : Date}) {
+  let localUpdate = Y.encodeStateAsUpdateV2(local.doc);
+  let remoteUpdate = Y.encodeStateAsUpdateV2(remote.doc);
 
-  const stateVector1 = Y.encodeStateVectorFromUpdateV2(local)
-  const stateVector2 = Y.encodeStateVectorFromUpdateV2(remote)
-  const diff1 = Y.diffUpdateV2(local, stateVector2)
-  const diff2 = Y.diffUpdateV2(remote, stateVector1)
+  const stateVector1 = Y.encodeStateVectorFromUpdateV2(localUpdate)
+  const stateVector2 = Y.encodeStateVectorFromUpdateV2(remoteUpdate)
+  const diff1 = Y.diffUpdateV2(localUpdate, stateVector2)
+  const diff2 = Y.diffUpdateV2(remoteUpdate, stateVector1)
 
   // sync clients
-  local = Y.mergeUpdatesV2([local, diff2])
-  remote = Y.mergeUpdatesV2([remote, diff1])
+  localUpdate = Y.mergeUpdatesV2([localUpdate, diff2])
+  remoteUpdate = Y.mergeUpdatesV2([remoteUpdate, diff1])
 
   // Last write wins
   // return { local: Y.encodeStateAsUpdateV2(localDoc), remote: Y.encodeStateAsUpdateV2(remoteDoc)};
 
   // Merge
-  return { local, remote};
+  return { local : localUpdate, remote : remoteUpdate};
 }
 
 export function encodeDocToJSONB(update: Uint8Array): number[] {
   return Array.from(update);
 }
 
-export function decodeDocFromJSONB(arr: number[]): Uint8Array {
+export function decodeUintFromJSONB(arr: number[]): Uint8Array {
   return new Uint8Array(arr);
 }

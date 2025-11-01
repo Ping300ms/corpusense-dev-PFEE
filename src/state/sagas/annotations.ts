@@ -62,7 +62,7 @@ function* handleSaveAnnotation(
     .map((a) => a.order ?? -1);
   const newOrder = regions.length > 0 ? Math.max(...regions) + 1 : 1;
 
-  const newAnnotation: Annotation = { ...annotationToSave, order: newOrder, updated_at: new Date().toISOString()};
+  const newAnnotation: Annotation = { ...annotationToSave, order: newOrder};
   const updatedAnnotations = (yield call(
     [annotationRepository, annotationRepository.update],
     newAnnotation,

@@ -5,5 +5,6 @@ export default interface Backup {
   object_type: string;
   content: number[];
   updated_at: string;
+  updated_by: string;
   deleted_at: string | null;
 }

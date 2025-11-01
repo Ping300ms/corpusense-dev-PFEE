@@ -52,7 +52,6 @@ function* handleCreateModel(
     description: description,
     fields,
     prompt,
-    updated_at: new Date().toISOString()
   };
   const modelRespository = getModelRepository();
   yield call([modelRespository, modelRespository.add], newModel);

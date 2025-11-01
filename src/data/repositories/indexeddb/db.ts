@@ -32,16 +32,16 @@ const dbSync = new Dexie('sync') as Dexie & {
 }
 
 db.version(1).stores({
-  collections: '&id, name, *tags.id, synced',
-  collectionContents: '&id, synced',
+  collections: '&id, name, *tags.id',
+  collectionContents: '&id',
   history: '&url',
   storedManifests: '&id, name',
   storedManifestContents: '&id',
   typesList: '&label',
   itemMetadata: '[id+attribute.label]',
   tags: '&id',
-  models: '&id, name, synced',
-  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order, synced',
+  models: '&id, name',
+  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order',
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',

@@ -5,7 +5,7 @@ import {
   uint8ToSyncable,
   mergeDocs,
   encodeDocToJSONB,
-  decodeDocFromJSONB, syncableToDoc, uint8toDoc,
+  decodeUintFromJSONB, syncableToDoc, uint8toDoc,
 } from '@/data/repositories/supabase/yjsUtils';
 import { CollectionContent, CollectionDetails } from '@/data/models/Collection.ts';
 import { DataModel } from '@/data/models/DataModel.ts';
@@ -83,7 +83,7 @@ describe('Yjs Syncable utilities', () => {
   it('should encode and decode JSONB-compatible array', () => {
     const encoded = syncableToUint8(baseObject);
     const jsonb = encodeDocToJSONB(encoded);
-    const restored = decodeDocFromJSONB(jsonb);
+    const restored = decodeUintFromJSONB(jsonb);
 
     expect(restored).toBeInstanceOf(Uint8Array);
     expect(restored).toEqual(encoded);

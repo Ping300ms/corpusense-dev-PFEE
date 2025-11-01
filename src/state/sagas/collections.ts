@@ -77,7 +77,6 @@ function* handleCreateCollection(action: PayloadAction<string>) {
     contentSize: 0,
     content: [],
     offline: false,
-    updated_at: new Date().toISOString(),
   };
 
   try {
@@ -208,7 +207,6 @@ function* handleCreateCollectionWithSelection(
     tags: [],
     contentSize: selection.length,
     offline: false,
-    updated_at: new Date().toISOString()
   };
   const content = generateCollectionContent(
     0,
