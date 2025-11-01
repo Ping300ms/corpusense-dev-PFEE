@@ -49,7 +49,7 @@ export class SyncManager {
   public static getInstance(
     client: typeof supabase = supabase,
     dbToSync: typeof db = db,
-    operationDb: typeof dbSync= dbSync
+    operationDb: typeof dbSync = dbSync
   ): SyncManager {
     if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
     return SyncManager.instance;
@@ -194,33 +194,33 @@ export class SyncManager {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.removePendingOperation('CREATE', 'SUPABASE', op.table, op.object_id);
-            return;
+            await this.operationDb.pendingOperations.delete(op.id);
+            break;
           }
           const res = await this.create(obj, op.table as keyof typeof this.dbToSync);
-          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'CREATE', res.error);
-          return;
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
+          break;
         }
         case "UPDATE": {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.removePendingOperation('UPDATE', 'SUPABASE', op.table, op.object_id);
-            return;
+            await this.operationDb.pendingOperations.delete(op.id);
+            break;
           }
           const res = await this.push(obj, op.table as keyof typeof this.dbToSync);
-          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'UPDATE', res.error);
-          return;
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
+          break;
         }
         case "DELETE": {
-          const obj = await this.client.from('backup').select('*').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
-          if (obj.data == null) {
-            await this.removePendingOperation('DELETE', 'SUPABASE', op.table, op.object_id);
-            return;
+          const obj = await this.client.from('backup').select('deleted_at').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
+          if (obj.data == null || obj.data.deleted_at != null) {
+            await this.operationDb.pendingOperations.delete(op.id);
+            break;
           }
           const res = await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
-          if (res?.error) this.remoteRequestErrorHandler(op.object_id, 'DELETE', res.error);
-          return;
+          if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
+          break;
         }
       }
     }
@@ -232,7 +232,7 @@ export class SyncManager {
     table: string,
     object_id: string
   ) : Promise<SyncPendingOperations | undefined> {
-    return dbSync.pendingOperations.filter(
+    return this.operationDb.pendingOperations.filter(
       (op) =>
         object_id === op.object_id &&
         op.type === type &&
@@ -248,7 +248,7 @@ export class SyncManager {
     object_id: string
   ) {
     const operation = await this.getPendingOperation(type, target, table, object_id);
-    if (operation !== undefined) await dbSync.pendingOperations.delete(operation.id);
+    if (operation !== undefined) await this.operationDb.pendingOperations.delete(operation.id);
     return operation?.id ?? null;
   }
 
@@ -269,12 +269,12 @@ export class SyncManager {
         object_id,
         date: new Date(),
       } as SyncPendingOperations;
-      await dbSync.pendingOperations.add(res);
+      await this.operationDb.pendingOperations.add(res);
       return res;
     }
 
     const res = {...operation, date: new Date()} as SyncPendingOperations;
-    await dbSync.pendingOperations.update(operation.id, res);
+    await this.operationDb.pendingOperations.update(operation.id, res);
 
     return res;
   }
@@ -338,7 +338,7 @@ export class SyncManager {
       toUpdate.push(finalObject);
     }
 
-    await dbSync.pendingOperations.bulkAdd(syncOperations);
+    await this.operationDb.pendingOperations.bulkAdd(syncOperations);
     await table.bulkDelete(toDelete);
     await table.bulkAdd(toCreate);
     await table.bulkPut(toUpdate);
@@ -351,7 +351,7 @@ export class SyncManager {
   private async onLocalInsert(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("CREATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await dbSync.pendingOperations.delete(operation.id);
+      await this.operationDb.pendingOperations.delete(operation.id);
       return;
     }
     console.log(`[Dexie] Added ${table} → pushing to Supabase`);
@@ -362,7 +362,7 @@ export class SyncManager {
   private async onLocalUpdate(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("UPDATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await dbSync.pendingOperations.delete(operation.id);
+      await this.operationDb.pendingOperations.delete(operation.id);
       return;
     }
     console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
@@ -373,7 +373,7 @@ export class SyncManager {
   private async onLocalDelete(key : string, table : string) {
     const operation = await this.getPendingOperation("DELETE", "DEXIE", table, key)
     if (operation !== undefined) {
-      await dbSync.pendingOperations.delete(operation.id);
+      await this.operationDb.pendingOperations.delete(operation.id);
       return;
     }
     console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
@@ -383,7 +383,6 @@ export class SyncManager {
 
   // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
-    console.log(this.userId, payload.new.updated_by);
     if (payload.new.updated_by === this.userId) {
       await this.removePendingOperation(
         "CREATE",
