@@ -15,6 +15,7 @@ import StoragePage from './pages/StoragePage';
 import WorkersManagerPage from './pages/WorkersManagerPage';
 import { ImporterPlugin, loadImporterPlugins } from './state/sagas/plugins/loader';
 import HomePage from '@/pages/demo/HomePage.tsx';
+import LoadTestPage from './pages/demo/LoadTestPage.tsx';
 import EditAnnotationPage from '@/pages/demo/EditAnnotationPage.tsx';
 import EditDataModelPage from '@/pages/demo/EditDataModelPage.tsx';
 import EditCollectionPage from '@/pages/demo/EditCollectionPage.tsx';
@@ -65,6 +66,7 @@ function App() {
               <Route path={'/login'} element={<LoginPage />} />/
 
               <Route path={`test`} element={<HomePage />} />
+              <Route path={'/test/load'} element={<LoadTestPage />} />
               <Route path="test/annotation/:id?" element={<EditAnnotationPage />} />
               <Route path="test/model/:id?" element={<EditDataModelPage />} />
               <Route path="test/collection/:id?" element={<EditCollectionPage />} />
