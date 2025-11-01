@@ -107,7 +107,7 @@ export class SyncManager {
       object_type: type,
       content: encodeDocToJSONB(update),
       updated_at: operation.date.toISOString(),
-      updated_by: this.userId,
+      change_id: operation.id,
       deleted_at: null,
     } as Backup);
 
@@ -116,15 +116,14 @@ export class SyncManager {
   }
 
   public async delete(id: string, type: keyof typeof this.dbToSync): Promise<{ data: null, error: PostgrestError} | { data: string, error: null} | null> {
-    await this.addPendingOperation("DELETE", "SUPABASE", type, id);
+    const operation = await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
     const userId = await this.getUser();
     if (!userId) return null;
 
-    const deletion_date = new Date().toISOString();
     const { error } = await this.client
       .from('backup')
-      .update({ deleted_at: deletion_date, updated_at: deletion_date, updated_by: this.userId })
+      .update({ deleted_at: operation.date.toISOString(), updated_at: operation.date.toISOString(), change_id: operation.id })
       .eq('user_id', userId)
       .eq('object_id', id)
       .eq('object_type', type)
@@ -171,7 +170,7 @@ export class SyncManager {
         object_type: type,
         content: encodeDocToJSONB(mergedUpdate),
         updated_at: operation.date.toISOString(),
-        updated_by: this.userId,
+        change_id: operation.id,
         deleted_at: remote?.deleted_at ?? null,
       } as Backup,
       { onConflict: 'user_id,object_type,object_id' }
@@ -239,17 +238,6 @@ export class SyncManager {
         op.location === target &&
         op.table === table
     ).first();
-  }
-
-  private async removePendingOperation(
-    type: "CREATE" | "UPDATE" | "DELETE",
-    target: "DEXIE" | "SUPABASE",
-    table: string,
-    object_id: string
-  ) {
-    const operation = await this.getPendingOperation(type, target, table, object_id);
-    if (operation !== undefined) await this.operationDb.pendingOperations.delete(operation.id);
-    return operation?.id ?? null;
   }
 
   private async addPendingOperation(
@@ -383,13 +371,9 @@ export class SyncManager {
 
   // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
-    if (payload.new.updated_by === this.userId) {
-      await this.removePendingOperation(
-        "CREATE",
-        "SUPABASE",
-        payload.new.object_type,
-        payload.new.object_id
-      )
+    const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
+    if (operation !== undefined) {
+      await this.operationDb.pendingOperations.delete(operation.id);
       return;
     }
 
@@ -400,15 +384,12 @@ export class SyncManager {
 
   // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteUpdate(payload: RealtimePostgresUpdatePayload<Backup>) : Promise<void> {
-    if (payload.new.updated_by === this.userId) {
-      await this.removePendingOperation(
-        payload.new.deleted_at !== null ? "DELETE" : "UPDATE",
-        "SUPABASE",
-        payload.new.object_type,
-        payload.new.object_id
-      )
+    const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
+    if (operation !== undefined) {
+      await this.operationDb.pendingOperations.delete(operation.id);
       return;
     }
+
     console.log(`[Supabase] Updated ${payload.new.object_type} → update in dexie`, uint8ToSyncable(decodeUintFromJSONB(payload.new.content)));
     const { error } = await this.applyRemoteChange(payload.new);
     if (error) this.localRequestErrorHandler(payload.new.object_id, "UPDATE", error);
