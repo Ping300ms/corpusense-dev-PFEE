@@ -63,8 +63,6 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.channelBaseName = channelBaseName
     this.supabaseClient = supabaseClient
     this.databaseSchemaName = databaseSchemaName
-
-    console.error("TADA");
   }
 
   public removeExistingChannel = async () => {
@@ -143,7 +141,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
         'postgres_changes',
         { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresUpdatePayload<TableType>) => {
-          console.info('Insert received:', payload)
+          console.info('Update received:', payload)
           void this.onUpdate?.(payload);
         },
       )
@@ -151,7 +149,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
         'postgres_changes',
         { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
         (payload: RealtimePostgresDeletePayload<TableType>) => {
-          console.info('Insert received:', payload)
+          console.info('Delete received:', payload)
           void this.onDelete?.(payload);
         },
       )

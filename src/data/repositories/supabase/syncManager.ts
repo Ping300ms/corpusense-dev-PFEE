@@ -107,6 +107,7 @@ export class SyncManager {
       object_type: type,
       content: encodeDocToJSONB(update),
       updated_at: operation.date.toISOString(),
+      updated_by: this.userId,
       deleted_at: null,
     } as Backup);
 
@@ -123,7 +124,7 @@ export class SyncManager {
     const deletion_date = new Date().toISOString();
     const { error } = await this.client
       .from('backup')
-      .update({ deleted_at: deletion_date, updated_at: deletion_date })
+      .update({ deleted_at: deletion_date, updated_at: deletion_date, updated_by: this.userId })
       .eq('user_id', userId)
       .eq('object_id', id)
       .eq('object_type', type)
@@ -366,6 +367,7 @@ export class SyncManager {
 
   // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
+    console.log(this.userId, payload.new.updated_by);
     if (payload.new.updated_by === this.userId) {
       await this.removePendingOperation(
         "CREATE",
