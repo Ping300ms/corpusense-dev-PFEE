@@ -131,7 +131,8 @@ export class SyncManager {
       .select()
       .maybeSingle<Backup>();
 
-    if (error) return { data: null, error};
+    if (error)
+      return { data: null, error};
     return {data: id, error: null};
   }
 
