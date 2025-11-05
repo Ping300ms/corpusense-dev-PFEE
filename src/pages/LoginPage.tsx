@@ -9,7 +9,6 @@ import useAppNavigation from '@/hooks/useAppNavigation.tsx';
 const LoginPage = () => {
   const { t } = useTranslation();
   const navigate = useAppNavigation();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -19,21 +18,48 @@ const LoginPage = () => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg(null);
-
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-
     if (error) {
       setErrorMsg(error.message);
     } else {
       await navigate.goToHome();
     }
-
     setLoading(false);
   };
 
   const handleOAuth = async () => {
     await supabase.auth.signInWithOAuth({ provider: 'github' })
   }
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      }
+    });
+    if (error) {
+      setErrorMsg(error.message);
+      setLoading(false);
+    }
+  };
+
+  const handleGitLabLogin = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'gitlab',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      }
+    });
+    if (error) {
+      setErrorMsg(error.message);
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex items-center justify-center min-h-screen">
@@ -79,12 +105,37 @@ const LoginPage = () => {
           >
             {loading ? t('loading') : t('btn_login')}
           </Button>
-          <Button
-            onClick={() => void handleOAuth()}
-            className="w-full bg-gray-800 text-white hover:bg-gray-700"
-          >
-            {t('form_oauth_github')}
-          </Button>
+
+          {/* OAuth Buttons */}
+          <div className="space-y-3">
+            <Button
+              type="button"
+              onClick={() => void handleOAuth()}
+              className="w-full bg-gray-800 text-white hover:bg-gray-700"
+              disabled={loading}
+            >
+              {t('form_oauth_github')}
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => void handleGoogleLogin()}
+              className="w-full bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
+              disabled={loading}
+            >
+              Connectez-vous via Google
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => void handleGitLabLogin()}
+              className="w-full bg-orange-600 text-white hover:bg-orange-700"
+              disabled={loading}
+            >
+              Connectez-vous via GitLab
+            </Button>
+          </div>
+
           <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
             {t('no_account')}{' '}
             <Link to="/register" className="text-blue-500 hover:underline">
@@ -92,7 +143,6 @@ const LoginPage = () => {
             </Link>
           </p>
         </form>
-
       </div>
     </div>
   );
