@@ -16,6 +16,7 @@ import i18next from 'i18next';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { supabase } from '@/utils/config.ts';
 
 const formSchema = z.object({
   name: z.string().min(4, {
@@ -34,8 +35,11 @@ const NewCollectionForm = ({ close }: { close: () => void }) => {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     dispatch(createCollectionRequest(values.name));
+    const {data, error}= await supabase.storage.createBucket(values.name);
+      console.log('data', data);
+    console.log('error', error);
     close();
   }
 

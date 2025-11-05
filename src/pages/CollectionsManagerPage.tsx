@@ -13,13 +13,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {FileUploader} from "react-drag-drop-files";
 import {
-  Table,
-  TableBody,
   TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import UploadFileForm from '@/components/UploadFileForm';
@@ -33,6 +29,27 @@ import { selectTagsByIds } from '@/state/selectors/tags';
 import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import ContextMenu from '@/components/menu/ContextMenu.tsx';
+import FileComponent from '@/components/FileComponent.tsx';
+import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import { supabase } from '@/utils/config.ts';
+
+interface FileProps {
+  id: string;
+  name: string;
+}
+
+interface ResponseProps{
+  data: {
+    upload: {
+      path: string;
+      id: string;
+    };
+  };
+  error: {
+    message: string;
+  };
+}
 
 const CollectionTableRow = ({
   collection,
@@ -77,7 +94,9 @@ const CollectionTableRow = ({
   };
 
   return (
-    <TableRow onClick={() => void handleOnClick(collection.id)}>
+    <TableRow onClick={() => void handleOnClick(collection.id)} onContextMenu={(e) => {
+      e.preventDefault();
+    }}>
       <TableCell>
         <Checkbox
           aria-label={t('aria_label_selection_collection')}
@@ -137,10 +156,47 @@ const CollectionTableRow = ({
 const CollectionsManagerPage = () => {
   const dispatch = useAppDispatch();
   const collections: CollectionDetails[] = useAppSelector(selectCollections);
+  const [files, setFiles] = useState<FileProps[]>([]);
   const { t } = useTranslation();
-
+  const fileTypes = ["JPG", "PNG", "PDF"];
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
+        const user = userData?.user;
+        if (!user?.id) throw new Error("Utilisateur non authentifié");
+
+        console.log("User:", user);
+        const { data, error: listErr } = await supabase.storage
+          .from("images")
+          .list(user.id, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: "name", order: "asc" },
+          });
+
+        if (listErr) throw listErr;
+        setFiles(data ?? []);
+        const session = supabase.auth.getSession !== null
+          ? (await supabase.auth.getSession()).data.session
+          : null;
+        const _token = session?.access_token ?? (await supabase.auth.getUser()).data?.user?.id_token as string ?? null;
+        setToken(_token);
+        if (token === null || token === undefined) {
+          throw new Error("No auth token available; please sign in first");
+        }
+
+      } catch (e: any) {
+        console.error(e);
+      }
+      return null;
+    })();
+  }, []);
 
   const addOrRemoveCollection = (id: string, isAdd: boolean) => {
     if (isAdd) {
@@ -162,7 +218,44 @@ const CollectionsManagerPage = () => {
     setCollectionToDelete(null);
   };
 
+  const handleFileAdded = async (file: File | File[]) => {
+    if (Array.isArray(file)) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("bucket", "images");
+
+    const response : ResponseProps = await supabase.functions.invoke("upload-image", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    }) as unknown as ResponseProps;
+    console.log(response);
+    const filePath : string[] = response.data.upload.path.split("/");
+    const fileName = filePath[filePath.length - 1];
+
+    setFiles(files.concat({name: fileName, id: response.data.upload.id}));
+
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const {active, over} = event;
+    console.log("active", active);
+    console.log("over", over);
+    /*
+    const { data, error } = await supabase
+  .storage
+  .from('avatars')
+  .move('public/avatar1.png', 'private/avatar2.png')
+     */
+  };
+
   return (
+    <DndContext onDragEnd={handleDragEnd}>
     <div className='flex h-full w-full flex-col items-center space-y-4 rounded-2xl border-1 bg-white'>
       <section className='mt-2 ml-4 flex w-full space-x-2'>
         <AlertDialogForm
@@ -189,6 +282,8 @@ const CollectionsManagerPage = () => {
         >
           {({ close }) => <UploadFileForm close={close} />}
         </AlertDialogForm>
+        {/* eslint-disable-next-line @typescript-eslint/no-misused-promises */}
+        <FileUploader handleChange={(file: File | File[]) => handleFileAdded(file)} name="file" types={fileTypes}/>
       </section>
 
       {collections.length > 0 ? (
@@ -196,48 +291,14 @@ const CollectionsManagerPage = () => {
           <h2 className='text-xl'>
             {t('info_number_of_collections', { number: collections.length })}
           </h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead></TableHead>
-                <TableHead>{t('table_col_title_collection_name')}</TableHead>
-                <TableHead>{t('table_col_title_collection_id')}</TableHead>
-                <TableHead>{t('table_col_title_collection_info')}</TableHead>
-                <TableHead>{t('table_col_title_tags')}</TableHead>
-                <TableHead>{t('table_col_title_actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {collections.map((col) => (
-                <CollectionTableRow
-                  collection={col}
-                  key={col.id}
-                  addOrRemoveCollection={addOrRemoveCollection}
-                  setCollectionToDelete={setCollectionToDelete}
-                />
-              ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={4}>
-                  {t('info_selection')} {selectedCollections.length} / {collections.length}
-                </TableCell>
-                <TableCell>
-                  {selectedCollections.length > 0 ? (
-                    <Button
-                      onClick={handleExport}
-                      aria-label={t('btn_export_collection')}
-                      title={t('btn_export_collection')}
-                    >
-                      <DownloadIcon />
-                    </Button>
-                  ) : (
-                    <div>-</div>
-                  )}
-                </TableCell>
-              </TableRow>
-            </TableFooter>
-          </Table>
+          <div className='flex flex-row w-full flex-wrap justify-center gap-2 overflow-y-auto p-2' >
+          {collections.map((collection) => (
+              <ContextMenu key={collection.id} collection={collection}/>
+          ))}
+            {files.map((file, index) => (
+              <FileComponent key={index} id={index} name={file.name}/>
+            ))}
+          </div>
 
           <AlertDialog
             open={collectionToDelete !== null}
@@ -270,6 +331,7 @@ const CollectionsManagerPage = () => {
         </div>
       )}
     </div>
+    </DndContext>
   );
 };
 

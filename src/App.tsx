@@ -15,6 +15,7 @@ import EditAnnotationPage from '@/pages/demo/EditAnnotationPage.tsx';
 import EditDataModelPage from '@/pages/demo/EditDataModelPage.tsx';
 import EditCollectionPage from '@/pages/demo/EditCollectionPage.tsx';
 import EditCollectionContentPage from '@/pages/demo/EditCollectionContentPage.tsx';
+import CollectionFilesPage from '@/pages/CollectionFilesPage.tsx';
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/strict-boolean-expressions
 const basePath: string = import.meta.env.VITE_BASE_PATH || '/';
@@ -40,6 +41,10 @@ function App() {
           <Route
             path={`${CorpusenseRoutes.COLLECTIONS}/:collectionId`}
             element={<CollectionInspectorPage />}
+          />
+          <Route
+            path={`${CorpusenseRoutes.COLLECTION}/:collectionId`}
+            element={<CollectionFilesPage />}
           />
           <Route path={CorpusenseRoutes.MODELS} element={<ModelsManagerPage />} />
           <Route path={CorpusenseRoutes.CONFIGURATION} element={<ConfigurationPage />} />
