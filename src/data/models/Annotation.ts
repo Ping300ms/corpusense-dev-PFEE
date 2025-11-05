@@ -1,6 +1,6 @@
 import { ImageAnnotation, ShapeType } from '@annotorious/annotorious';
 import { v4 as uuid } from 'uuid';
-import { Syncable } from '@/data/models/Syncable.ts';
+import { WithStringId } from '@/data/models/utils.ts';
 
 export enum W3CMotivationEnum {
   Assessing = 'assessing',
@@ -28,7 +28,7 @@ export enum ElementType {
   REGION = 'REGION',
 }
 
-export interface Annotation extends ImageAnnotation, Syncable {
+export interface Annotation extends ImageAnnotation, WithStringId {
   canvasId: string;
   collectionId: string;
   order: number;

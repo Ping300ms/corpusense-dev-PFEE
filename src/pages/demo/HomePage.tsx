@@ -25,7 +25,9 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadData();
-    new DexieObservableListener({
+    new DexieObservableListener(
+      db,
+      {
       onAdd: () => loadData(),
       onUpdate: () => loadData(),
       onDelete: () => loadData(),

@@ -8,8 +8,8 @@ import { Result } from '@/data/models/Result';
 import { StoredManifestContent, StoredManifestDetails } from '@/data/models/StoredManifest';
 import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
-import 'dexie-observable';
 import Dexie, { type EntityTable } from 'dexie';
+import 'dexie-observable';
 import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 
 const db = new Dexie('mezanno') as Dexie & {
@@ -25,25 +25,37 @@ const db = new Dexie('mezanno') as Dexie & {
   namedEntities: EntityTable<NamedEntity, 'id'>;
   results: EntityTable<Result, 'id'>;
   workers: EntityTable<Worker, 'id'>;
-  syncPendingOperations: EntityTable<SyncPendingOperations, 'id'>;
 };
 
+const dbSync = new Dexie('sync') as Dexie & {
+  pendingOperations: EntityTable<SyncPendingOperations, 'id'>;
+}
+
 db.version(1).stores({
-  collections: '&id, name, *tags.id, synced',
-  collectionContents: '&id, synced',
+  collections: '&id, name, *tags.id',
+  collectionContents: '&id',
   history: '&url',
   storedManifests: '&id, name',
   storedManifestContents: '&id',
   typesList: '&label',
   itemMetadata: '[id+attribute.label]',
   tags: '&id',
-  models: '&id, name, synced',
-  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order, synced',
+  models: '&id, name',
+  annotations: '&id, canvasId, collectionId, [canvasId+collectionId], order',
   namedEntities: '&id, *annotationIds, type.id',
   results: '++id, workerName, workerId, [scopeKey+workerName], taskId',
   workers: '&id, name, status, [scopeKey+name]',
-  syncPendingOperations: '&id, type, location, table, object_id, date',
 });
+
+dbSync.version(1).stores({
+  pendingOperations: '&id, type, location, table, object_id, date',
+});
+
+export const clearDatabase = async () => {
+  await Dexie.delete('mezanno');
+};
+
+Dexie.debug = true;
 
 // db.version(33)
 //   .stores({
@@ -124,4 +136,4 @@ db.version(1).stores({
 //     }
 //   });
 
-export { db };
+export { db, dbSync };

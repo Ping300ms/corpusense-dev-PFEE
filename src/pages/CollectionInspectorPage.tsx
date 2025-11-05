@@ -1,8 +1,7 @@
 import CanvasViewer from '@/components/CanvasViewer';
-import CollectionMetadataForm from '@/components/CollectionMetadataForm';
 import CollectionToolbar from '@/components/CollectionToolbar';
+import CollectionMetadataForm from '@/components/forms/CollectionMetadataForm';
 import GridThumb from '@/components/GridThumb';
-import ModelButtons from '@/components/textviewer/ModelButtons';
 import TextViewer from '@/components/textviewer/TextViewer';
 import {
   Accordion,
@@ -26,8 +25,6 @@ import { useParams } from 'react-router-dom';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeGrid as Grid } from 'react-window';
 
-const COLUMN_COUNT = 5;
-
 interface GridCellProps {
   columnIndex: number;
   rowIndex: number;
@@ -36,13 +33,14 @@ interface GridCellProps {
     collection: Collection;
     width: number;
     height: number;
+    colCount: number;
     canvasToDisplay: Canvas | undefined;
     setCanvasToDisplay: (canvas: Canvas) => void;
   };
 }
 
 const GridCell: FC<GridCellProps> = ({ columnIndex, rowIndex, style, data }) => {
-  const index = rowIndex * COLUMN_COUNT + columnIndex;
+  const index = rowIndex * data.colCount + columnIndex;
   //we return an empty div if the index is out of bounds
   //this is to avoid the error "index out of bounds" when using react-window
   if (index >= data.collection.content.length) {
@@ -80,6 +78,11 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
   const currentCollection = useAppSelector(selectCurrentCollection);
   const [canvasToDisplay, setCanvasToDisplay] = useState<Canvas | undefined>(undefined);
   const [activeTab, setActiveTab] = useState('document');
+  const [colCount, setColCount] = useState(6);
+
+  useEffect(() => {
+    setCanvasToDisplay(undefined);
+  }, [collectionId]);
 
   useEffect(() => {
     if (canvasToDisplay !== undefined) {
@@ -88,15 +91,29 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
     }
   }, [canvasToDisplay]);
 
+  const handleOnResize = (size: { height: number; width: number }) => {
+    if (size.width < 200) {
+      setColCount(3);
+    } else if (size.width < 800) {
+      setColCount(4);
+    } else if (size.width < 1000) {
+      setColCount(5);
+    } else if (size.width < 1200) {
+      setColCount(6);
+    } else {
+      setColCount(7);
+    }
+  };
+
   return (
     <section className='h-full max-h-full w-full max-w-full'>
       <ResizablePanelGroup direction='horizontal'>
-        <ResizablePanel className='mr-1 flex' minSize={30}>
+        <ResizablePanel className='mr-1 flex min-h-0 min-w-0' minSize={30}>
           {currentCollection ? (
             <div className='flex h-full max-h-full w-full max-w-full flex-col gap-2'>
               <Accordion
                 asChild
-                className='panel'
+                className='panel flex-col'
                 type='single'
                 collapsible
                 defaultValue='metadata' //this open the metadata by default
@@ -119,21 +136,22 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
               )}
               <div className='panel h-full w-full overflow-hidden'>
                 {currentCollection.content.length > 0 ? (
-                  <AutoSizer role='list'>
+                  <AutoSizer role='list' onResize={handleOnResize}>
                     {({ height, width }) => (
                       <Grid
-                        columnCount={COLUMN_COUNT}
-                        columnWidth={width / COLUMN_COUNT}
+                        columnCount={colCount}
+                        columnWidth={width / colCount}
                         height={height}
-                        rowCount={Math.ceil(currentCollection.content.length / COLUMN_COUNT)}
+                        rowCount={Math.ceil(currentCollection.content.length / colCount)}
                         rowHeight={175}
                         width={width}
                         itemData={{
                           collection: currentCollection,
-                          width: width / COLUMN_COUNT - 20,
+                          width: width / colCount - 20,
                           height: 165,
                           setCanvasToDisplay,
                           canvasToDisplay,
+                          colCount: colCount,
                         }}
                       >
                         {GridCell}
@@ -153,7 +171,7 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
             </div>
           )}
         </ResizablePanel>
-        <ResizableHandle withHandle />
+        <ResizableHandle withHandle className='w-1 cursor-col-resize bg-dark-slate-gray' />
         <ResizablePanel className='ml-1 flex-1 overflow-hidden' minSize={30}>
           {canvasToDisplay === undefined ? (
             <div className='panel flex h-full w-full items-center justify-center text-2xl text-red-500'>
@@ -171,7 +189,6 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
                   <TabsTrigger value='document'>Vue document</TabsTrigger>
                   <TabsTrigger value='text'>Vue texte</TabsTrigger>
                 </TabsList>
-                {activeTab === 'text' && <ModelButtons collectionId={collectionId} />}
               </div>
               <TabsContent value='document'>
                 <CanvasViewer colllectionId={collectionId} canvas={canvasToDisplay} />

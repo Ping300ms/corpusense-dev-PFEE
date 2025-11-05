@@ -1,10 +1,13 @@
 import CanvasViewer from '@/components/CanvasViewer';
+import Loading from '@/components/Loading';
+import NoManifestToShow from '@/components/NoManifestToShow';
+import NothingToShow from '@/components/NothingToShow';
 import { CanvasSelectionProvider } from '@/components/reducers/CanvasSelectionContext';
 import { Toggle } from '@/components/ui/toggle';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import { fecthManifestRequest } from '@/state/reducers/manifests';
 import { Canvas } from '@iiif/presentation-3';
-import { PanelTopClose, PanelTopOpen } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightToLine } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -16,97 +19,89 @@ const ManifestExplorerPage = () => {
   const { t } = useTranslation();
   const appDispatch = useAppDispatch();
   const { isLoading, isLoaded, loadedData } = useAppSelector((state) => state.manifests);
-  const [isMetadataOpen, setIsMetadataOpen] = useState(true);
-  const [isGalleryOpen, setIsGalleryOpen] = useState(true);
+
   const [searchParams] = useSearchParams();
   const [canvasToDisplay, setCanvasToDisplay] = useState<Canvas | undefined>(undefined);
+  const [metadataVisible, setMetadataVisible] = useState(true);
 
   useEffect(() => {
     const id = searchParams.get('manifestId');
     if (id != null) {
       appDispatch(fecthManifestRequest(id));
     }
+    setCanvasToDisplay(undefined);
   }, [searchParams]);
 
+  if (isLoading) {
+    return <Loading />;
+  }
+
+  if (!isLoaded || loadedData == null) {
+    return (
+      <div className='flex h-full w-full flex-col items-center justify-center space-y-2 p-2'>
+        <NoManifestToShow />
+      </div>
+    );
+  }
+
+  const manifest = loadedData.content;
+
   return (
-    <>
-      {isLoaded && (
-        <section className='mb-2 flex space-x-2'>
-          <Toggle onPressedChange={setIsMetadataOpen} pressed={isMetadataOpen} variant='outline'>
-            {isMetadataOpen ? (
-              <>
-                <PanelTopClose />
-                {t('btn_close_metadata')}
-              </>
-            ) : (
-              <>
-                <PanelTopOpen />
-                {t('btn_open_metadata')}
-              </>
-            )}
-          </Toggle>
-          <Toggle onPressedChange={setIsGalleryOpen} pressed={isGalleryOpen} variant='outline'>
-            {isGalleryOpen ? (
-              <>
-                <PanelTopClose />
-                {t('btn_close_gallery')}
-              </>
-            ) : (
-              <>
-                <PanelTopOpen />
-                {t('btn_open_gallery')}
-              </>
-            )}
-          </Toggle>
-        </section>
-      )}
+    <div className='flex h-full w-full'>
+      <div className='h-full'>
+        <Toggle
+          className='soft-button mt-4'
+          onClick={() => setMetadataVisible(!metadataVisible)}
+          title={`${metadataVisible ? t('btn_close_metadata') : t('btn_open_metadata')}`}
+          pressed={metadataVisible}
+        >
+          {metadataVisible ? <ArrowLeftToLine /> : <ArrowRightToLine />}
+        </Toggle>
+      </div>
       <ResizablePanelGroup direction='horizontal' className='flex-1 space-x-2'>
-        {isMetadataOpen && (
+        {metadataVisible && (
           <>
             <ResizablePanel
               order={1}
               id='metadata-panel'
-              className='flex h-full w-full justify-center rounded-lg bg-white'
+              className='panel grow justify-center'
               minSize={25}
             >
-              <ManifestDetails />
+              <ManifestDetails manifest={manifest} />
             </ResizablePanel>
-            <ResizableHandle withHandle />
+
+            <ResizableHandle withHandle className='w-1 cursor-col-resize bg-dark-slate-gray' />
           </>
         )}
 
-        {!isLoading && isLoaded && (
+        {loadedData?.content?.items !== undefined && loadedData?.content?.items.length > 0 && (
           <>
-            {isGalleryOpen &&
-              loadedData?.content?.items !== undefined &&
-              loadedData?.content?.items.length > 0 && (
-                <>
-                  <ResizablePanel
-                    order={2}
-                    id='gallery-panel'
-                    className='h-full rounded-lg bg-white'
-                    minSize={25}
-                  >
-                    <CanvasSelectionProvider canvasesLoaded={loadedData.content.items}>
-                      <CanvasGallery setCanvasToDisplay={setCanvasToDisplay} />
-                    </CanvasSelectionProvider>
-                  </ResizablePanel>
-                  <ResizableHandle withHandle />
-                </>
-              )}
-
-            <ResizablePanel
-              id='canvas-panel'
-              order={3}
-              minSize={30}
-              className='relative h-full w-full rounded-lg bg-white'
-            >
-              <CanvasViewer canvas={canvasToDisplay} />
+            <ResizablePanel order={2} id='gallery-panel' className='panel' minSize={25}>
+              <CanvasSelectionProvider canvasesLoaded={loadedData.content.items}>
+                <CanvasGallery
+                  setCanvasToDisplay={setCanvasToDisplay}
+                  canvasToDisplay={canvasToDisplay}
+                />
+              </CanvasSelectionProvider>
             </ResizablePanel>
+            <ResizableHandle withHandle className='w-1 cursor-col-resize bg-dark-slate-gray' />
           </>
         )}
+
+        <ResizablePanel id='canvas-panel' order={3} minSize={30} className='panel'>
+          <section
+            className='flex h-full w-full items-center justify-center'
+            aria-label='canvas viewer'
+          >
+            {canvasToDisplay === undefined ? (
+              <NothingToShow />
+            ) : (
+              <CanvasViewer canvas={canvasToDisplay} />
+            )}
+          </section>
+        </ResizablePanel>
       </ResizablePanelGroup>
-    </>
+    </div>
   );
 };
 
@@ -116,5 +111,3 @@ export default ManifestExplorerPage;
 On est obligé de séparer CanvasesViewer et CanvasImageViewer à cause de Selecto. Si les deux sont dans le même composant, 
 Selecto empêche le fonctionnement correct de Annotorious.
 */
-
-//TODO il va falloir attribuer un uuid aux composants qui veulent afficher un CanvasImageViewer (à transmettre dans le store)

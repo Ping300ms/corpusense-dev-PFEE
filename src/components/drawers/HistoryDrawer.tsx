@@ -1,8 +1,6 @@
-import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
-import { resetManifestOpenEvent } from '@/state/reducers/manifests';
-import { selectManifestOpenEvent } from '@/state/selectors/manifests';
+import { useAppSelector } from '@/hooks/hooks';
 import { History } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import HistoryNav from '../HistoryNav';
 import {
@@ -18,30 +16,27 @@ import {
 
 const HistoryDrawer = () => {
   const { t } = useTranslation();
-  const appDispatch = useAppDispatch();
-  const manifestOpenEvent = useAppSelector(selectManifestOpenEvent);
-
+  const firstTime = useRef(true); //nécessaire si on veut ouvrir le drawer et qu'un manifest est déjà chargé
+  const { loadedData, isLoading } = useAppSelector((state) => state.manifests);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) {
-      appDispatch(resetManifestOpenEvent());
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (manifestOpenEvent) {
+    if (loadedData !== null && !firstTime.current) {
       setIsOpen(false);
     }
-  }, [manifestOpenEvent]);
+  }, [loadedData]);
+
+  // If a manifest is loading, we consider it's not the first time anymore
+  useEffect(() => {
+    if (isLoading) {
+      firstTime.current = false;
+    }
+  }, [isLoading]);
 
   return (
     <Drawer open={isOpen} onOpenChange={setIsOpen}>
       <DrawerTrigger asChild>
-        <button
-          className='align-center flex cursor-pointer items-center justify-center gap-2 space-x-2 rounded-xl border-2 bg-white p-2 hover:bg-gray-400 hover:text-white'
-          aria-label={t('btn_open_history')}
-        >
+        <button className='soft-button' aria-label={t('btn_open_history')}>
           <History size={16} />
           {t('btn_open_history')}
         </button>
@@ -56,7 +51,7 @@ const HistoryDrawer = () => {
         <HistoryNav />
         <DrawerFooter>
           <DrawerClose>
-            <div className='rounded-md border border-black p-2'>{t('btn_cancel')}</div>
+            <div className='soft-button'>{t('btn_cancel')}</div>
           </DrawerClose>
         </DrawerFooter>
       </DrawerContent>

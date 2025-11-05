@@ -38,6 +38,16 @@ const useAppNavigation = () => {
   const goToWorkersManager = async () => {
     await navigate(`/${CorpusenseRoutes.WORKERS}`);
   };
+  const goToHome = async () => {
+    await navigate('/');
+  }
+
+  const goToLogin = async () => {
+    await navigate('/login');
+  }
+  const goToRegister = async () => {
+    await navigate('/register');
+  }
 
   const goToCollection = async (collectionId: string) => {
     await navigate(`/${CorpusenseRoutes.COLLECTION}/${collectionId}`);
@@ -51,6 +61,9 @@ const useAppNavigation = () => {
     goToModelsManager,
     goToStorage,
     goToWorkersManager,
+    goToHome,
+    goToLogin,
+    goToRegister
     goToCollection
   };
 };

@@ -3,8 +3,8 @@ import {
   IDeleteChange,
   IUpdateChange,
 } from 'dexie-observable/api';
-import { db } from '@/data/repositories/indexeddb/db.ts';
 import { SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
+import Dexie from 'dexie';
 
 export interface OnLocalChangeCallbacks {
   onAdd?: (entity: SyncableObject, table: string) => void | Promise<void>;
@@ -15,7 +15,7 @@ export interface OnLocalChangeCallbacks {
 export class DexieObservableListener {
   private callbacks: OnLocalChangeCallbacks;
 
-  constructor(callbacks: OnLocalChangeCallbacks) {
+  constructor(db: Dexie, callbacks: OnLocalChangeCallbacks) {
     this.callbacks = callbacks;
 
     db.on('changes', (changes) => {

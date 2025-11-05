@@ -12,6 +12,7 @@ export interface WorkerState {
     displayName?: string;
     description?: string;
     category?: string;
+    exportFormats?: string[];
   }[];
 }
 
@@ -35,6 +36,7 @@ export interface StartWorkerProcessPayload {
 
 export interface ExportWorkerPayload {
   worker: Worker;
+  formats: string[];
 }
 
 export const workerSlice = createSlice({
@@ -57,6 +59,9 @@ export const workerSlice = createSlice({
         // If the worker does not exist, add it
         state.workers.push(action.payload);
       }
+    },
+    addWorkersSuccess: (state, action: PayloadAction<Worker[]>) => {
+      state.workers = [...state.workers, ...action.payload];
     },
     addResult: (state, action: PayloadAction<Result>) => {
       const result = action.payload;
@@ -81,6 +86,9 @@ export const workerSlice = createSlice({
         state.results.push(result);
       }
     },
+    addResultsSuccess: (state, action: PayloadAction<Result[]>) => {
+      state.results = [...state.results, ...action.payload];
+    },
     setWorkers: (state, action: PayloadAction<Worker[]>) => {
       state.workers = action.payload;
     },
@@ -96,6 +104,7 @@ export const workerSlice = createSlice({
           displayName?: string;
           description?: string;
           category?: string;
+          exportFormats?: string[];
         }[]
       >,
     ) {
@@ -125,6 +134,8 @@ export const {
   stopWorkerProcessRequest,
   updateWorker,
   addResult,
+  addResultsSuccess,
+  addWorkersSuccess,
   setWorkers,
   setResults,
   setPlugins,

@@ -1,17 +1,18 @@
 import { Manifest } from '@iiif/presentation-3';
 import { CollectionElement } from './CollectionElement';
 import { Tag } from './Tag';
-import { Syncable } from '@/data/models/Syncable.ts';
+import { WithStringId } from '@/data/models/utils.ts';
 
-export type CollectionDetails = Syncable & {
+export type CollectionDetails = WithStringId & {
   name: string;
   about?: string;
   tags: string[];
   modelId?: string;
   contentSize: number;
+  offline: boolean;
 };
 
-export type CollectionContent = Syncable & {
+export type CollectionContent = WithStringId & {
   content: CollectionElement[];
 };
 

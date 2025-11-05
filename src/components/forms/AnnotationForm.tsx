@@ -17,17 +17,17 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import AnnotationOrderPanel from './AnnotationOrderPanel';
-import Entities from './Entities';
-import Toolbar from './ToolBar';
-import { Button } from './ui/button';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Textarea } from './ui/textarea';
+import AnnotationOrderPanel from '../AnnotationOrderPanel';
+import Entities from '../Entities';
+import Toolbar from '../ToolBar';
+import { Button } from '../ui/button';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Textarea } from '../ui/textarea';
 
 const annotationFormSchema = z.object({
-  type: z.nativeEnum(ElementType),
-  value: z.string({ required_error: 'Type is required' }).optional(),
+  type: z.enum(ElementType),
+  value: z.string({ error: 'Type is required' }).optional(),
 });
 
 const AnnotationForm = ({
@@ -111,7 +111,7 @@ const AnnotationForm = ({
         <form
           // eslint-disable-next-line @typescript-eslint/no-misused-promises
           onSubmit={form.handleSubmit(onSubmit)}
-          className='relative mx-auto flex-col space-y-2'
+          className='mx-auto w-full flex-col space-y-2'
         >
           <div className='flex flex-col gap-2'>
             <FormField
@@ -163,9 +163,9 @@ const AnnotationForm = ({
               )}
             />
           </div>
-          <Button type='submit' variant='outline' className='cursor-pointer'>
+          <button type='submit' className='soft-button'>
             <Save /> {t('btn_save')}
-          </Button>
+          </button>
         </form>
       </Form>
 

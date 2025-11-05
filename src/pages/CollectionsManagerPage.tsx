@@ -1,26 +1,21 @@
-import AlertDialogForm from '@/components/AlertDialogForm';
-import NewCollectionForm from '@/components/NewCollectionForm';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { useAlertDialogContext } from '@/components/reducers/useAlertDialogContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {FileUploader} from "react-drag-drop-files";
 import {
+  Table,
+  TableBody,
   TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import UploadFileForm from '@/components/UploadFileForm';
 import { CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import useDialog from '@/hooks/ui/useDialog';
 import useAppNavigation from '@/hooks/useAppNavigation';
 import { removeCollectionRequest } from '@/state/reducers/collections';
 import { exportCollectionsRequest } from '@/state/reducers/export';
@@ -54,14 +49,15 @@ interface ResponseProps{
 const CollectionTableRow = ({
   collection,
   addOrRemoveCollection,
-  setCollectionToDelete,
 }: {
   collection: CollectionDetails;
   addOrRemoveCollection: (collectionId: string, isAdd: boolean) => void;
-  setCollectionToDelete: (id: string) => void;
 }) => {
   const { t } = useTranslation();
   const navigation = useAppNavigation();
+  const dispatch = useAppDispatch();
+  const { openDialog } = useAlertDialogContext();
+
   const { lastExportContent, lastExportDate, lastExportStatus } = useAppSelector(
     (state) => state.export,
   );
@@ -78,7 +74,14 @@ const CollectionTableRow = ({
   }, [lastExportContent]);
 
   const handleDelete = (id: string) => {
-    setCollectionToDelete(id);
+    openDialog({
+      title: t('title_are_you_sure'),
+      description: t('description_delete_collection'),
+      onConfirm: {
+        message: t('btn_yes'),
+        action: () => dispatch(removeCollectionRequest(id)),
+      },
+    });
   };
 
   const handleOnClick = async (id: string) => {
@@ -154,8 +157,11 @@ const CollectionTableRow = ({
 };
 
 const CollectionsManagerPage = () => {
-  const dispatch = useAppDispatch();
+  const { t } = useTranslation();
   const collections: CollectionDetails[] = useAppSelector(selectCollections);
+  const { openImportCollectionDialog, openNewCollectionDialog, openExportCollectionDialog } =
+    useDialog();
+
   const [files, setFiles] = useState<FileProps[]>([]);
   const { t } = useTranslation();
   const fileTypes = ["JPG", "PNG", "PDF"];
@@ -209,7 +215,7 @@ const CollectionsManagerPage = () => {
   };
 
   const handleExport = () => {
-    dispatch(exportCollectionsRequest(selectedCollections));
+    openExportCollectionDialog(selectedCollections);
   };
 
   const handleDelete = () => {
@@ -256,32 +262,24 @@ const CollectionsManagerPage = () => {
 
   return (
     <DndContext onDragEnd={handleDragEnd}>
-    <div className='flex h-full w-full flex-col items-center space-y-4 rounded-2xl border-1 bg-white'>
-      <section className='mt-2 ml-4 flex w-full space-x-2'>
-        <AlertDialogForm
+    <div className='panel flex-col items-center space-y-4'>
+      <section className='mt-2 ml-4 flex w-full justify-center space-x-2'>
+        <button
+          className='soft-button'
           title={t('btn_create_collection')}
-          description={t('description_create_collection')}
-          trigger={
-            <>
-              <FilePlus />
-              {t('btn_create_collection')}
-            </>
-          }
+          onClick={openNewCollectionDialog}
         >
-          {({ close }) => <NewCollectionForm close={close} />}
-        </AlertDialogForm>
-        <AlertDialogForm
+          <FilePlus />
+          {t('btn_create_collection')}
+        </button>
+        <button
+          className='soft-button'
           title={t('btn_import_collection')}
-          description={t('description_import_collection')}
-          trigger={
-            <>
-              <Import />
-              {t('btn_import_collection')}
-            </>
-          }
+          onClick={openImportCollectionDialog}
         >
-          {({ close }) => <UploadFileForm close={close} />}
-        </AlertDialogForm>
+          <Import />
+          {t('btn_import_collection')}
+        </button>
         {/* eslint-disable-next-line @typescript-eslint/no-misused-promises */}
         <FileUploader handleChange={(file: File | File[]) => handleFileAdded(file)} name="file" types={fileTypes}/>
       </section>

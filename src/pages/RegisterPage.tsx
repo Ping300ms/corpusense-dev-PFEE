@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
+import useAppNavigation from '@/hooks/useAppNavigation.tsx';
+import { Link } from 'react-router-dom';
 
 const RegisterPage = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const navigate = useAppNavigation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,7 +32,7 @@ const RegisterPage = () => {
     if (error) {
       setErrorMsg(error.message);
     } else {
-      await navigate('/collections'); // ou page de confirmation email
+      await navigate.goToHome();
     }
 
     setLoading(false);
@@ -40,6 +41,9 @@ const RegisterPage = () => {
   return (
     <div className="flex items-center justify-center min-h-screen px-4">
       <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-md w-full max-w-md text-left">
+        <h1 className="text-2xl font-semibold text-center text-gray-800 dark:text-white mb-6">
+          {t('page_title_register')}
+        </h1>
         <form onSubmit={(e) => void handleRegister(e)} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">

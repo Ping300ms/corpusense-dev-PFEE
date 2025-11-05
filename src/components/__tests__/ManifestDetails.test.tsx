@@ -3,7 +3,7 @@ import { renderWithProviders } from '@/__tests__/utils';
 import { RootState } from '@/state/store';
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import ManifestDetails from './ManifestDetails';
+import ManifestDetails from '../ManifestDetails';
 
 describe('ManifestDetails', () => {
   it('should display loading if manifest is loading', () => {
@@ -14,7 +14,12 @@ describe('ManifestDetails', () => {
         isLoading: true,
       },
     };
-    renderWithProviders(<ManifestDetails />, { preloadedState });
+    if (preloadedState.manifests.loadedData?.content) {
+      renderWithProviders(
+        <ManifestDetails manifest={preloadedState.manifests.loadedData?.content} />,
+        { preloadedState },
+      );
+    }
 
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
