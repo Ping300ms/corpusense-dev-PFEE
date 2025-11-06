@@ -22,12 +22,13 @@ import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 import { v4 as uuid } from 'uuid';
 
 export class SyncManager {
+  private readonly defaultPullDate = '2003-01-05T08:01:00Z'; // date before project start
   private static instance: SyncManager | null = null;
 
   private readonly client: SupabaseClient;
   private readonly dbToSync: typeof db;
   private readonly operationDb: typeof dbSync;
-  private lastPull: Date;
+  private lastPull: Date = new Date(this.defaultPullDate);
   private userId: string | null = null;
   private isSyncing = false;
 
@@ -41,7 +42,6 @@ export class SyncManager {
     this.client = client;
     this.dbToSync = dbToSync;
     this.operationDb = operationDb;
-    this.lastPull = new Date(localStorage.getItem("LastPull") ?? '2025-01-01T00:00:00Z');
 
     this.initializeListeners();
   }
@@ -80,12 +80,10 @@ export class SyncManager {
     this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
       switch (_event) {
         case 'SIGNED_IN':
-          void this.realtimeListener?.subscribe();
-          void this.getUser();
+          void this.onSignedIn();
           break;
         case 'SIGNED_OUT':
-          void this.realtimeListener?.removeExistingChannel();
-          this.userId = null;
+          void this.onSignedOut();
           break;
       }
     }).data.subscription;
@@ -193,7 +191,7 @@ export class SyncManager {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.create(obj, op.table as keyof typeof this.dbToSync);
@@ -204,7 +202,7 @@ export class SyncManager {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.push(obj, op.table as keyof typeof this.dbToSync);
@@ -214,7 +212,7 @@ export class SyncManager {
         case "DELETE": {
           const obj = await this.client.from('backup').select('deleted_at').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
           if (obj.data == null || obj.data.deleted_at != null) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
@@ -267,6 +265,10 @@ export class SyncManager {
     return res;
   }
 
+  private async removePendingOperation(id: string) {
+    await this.operationDb.pendingOperations.delete(id);
+  }
+
   public async pullUpdates(tableName: keyof typeof this.dbToSync): Promise<{ error: string } | null> {
     const user = await this.getUser();
     if (!user) return { error: `[SELECT] Sync: error not logged in` };
@@ -278,7 +280,7 @@ export class SyncManager {
       .select('object_id, content, updated_at, deleted_at')
       .eq('user_id', user)
       .eq('object_type', tableName)
-      .gt('updated_at', this.lastPull.toISOString())
+      .gt('updated_at', this.lastPull?.toISOString() ?? '')
       .order('updated_at', { ascending: true});
 
     if (error) return { error: `[PULL] Sync: error pulling from Supabase ${tableName} updates ${error.message}` };
@@ -331,7 +333,7 @@ export class SyncManager {
     await table.bulkAdd(toCreate);
     await table.bulkPut(toUpdate);
 
-    localStorage.setItem("LastPull", requestDate.toString());
+    localStorage.setItem(`${this.userId}-lastPull`, requestDate.toString());
     this.lastPull = requestDate;
     return null;
   }
@@ -339,7 +341,7 @@ export class SyncManager {
   private async onLocalInsert(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("CREATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Added ${table} → pushing to Supabase`);
@@ -350,7 +352,7 @@ export class SyncManager {
   private async onLocalUpdate(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("UPDATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
@@ -361,7 +363,7 @@ export class SyncManager {
   private async onLocalDelete(key : string, table : string) {
     const operation = await this.getPendingOperation("DELETE", "DEXIE", table, key)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
@@ -369,30 +371,30 @@ export class SyncManager {
     if (result?.error) this.remoteRequestErrorHandler(key, "DELETE", result?.error);
   }
 
-  // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
 
     console.log(`[Supabase] Add ${payload.new.object_type} → adding to dexie`);
     const { error } = await this.applyRemoteChange(payload.new);
     if (error) this.localRequestErrorHandler(payload.new.object_id, "CREATE", error);
+    else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
   }
 
-  // TODO update lastPull more often to reduce pullUpdates duration
   private async onRemoteUpdate(payload: RealtimePostgresUpdatePayload<Backup>) : Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
 
     console.log(`[Supabase] Updated ${payload.new.object_type} → update in dexie`, uint8ToSyncable(decodeUintFromJSONB(payload.new.content)));
     const { error } = await this.applyRemoteChange(payload.new);
     if (error) this.localRequestErrorHandler(payload.new.object_id, "UPDATE", error);
+    else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
   }
 
   private async onRemoteDelete(payload: RealtimePostgresDeletePayload<Backup>) : Promise<void> {
@@ -491,13 +493,26 @@ export class SyncManager {
     return this.userId;
   }
 
+  // TODO maybe purge/redo DEXIE operations at start
+  private async onSignedIn() {
+    await this.realtimeListener?.subscribe();
+    const userId = await this.getUser();
+    if (!userId) return; // not supposed to happen
+    const lastPull = localStorage.getItem(`${userId}-lastPull`);
+    if (lastPull !== null) this.lastPull = new Date(lastPull);
+  }
+
+  private async onSignedOut() {
+    this.userId = null;
+    this.lastPull = new Date(this.defaultPullDate);
+    await this.realtimeListener?.removeExistingChannel();
+  }
+
   private remoteRequestErrorHandler(key : string, operation: "CREATE" | "UPDATE" | "DELETE", error : PostgrestError) : void {
-    // TODO : error handler 406 et 409
     console.log(`[Supabase] Remote ${operation} on ${key} failed: ${error.message}`, error);
   }
 
   private localRequestErrorHandler(key : string, operation: "CREATE" | "UPDATE" | "DELETE", error : DexieError) : void {
-    // TODO : error handler 406 et 409
     console.log(`[Dexie] Local ${operation} on ${key} failed: ${error.message}`, error);
   }
 
