@@ -191,7 +191,7 @@ export class SyncManager {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.create(obj, op.table as keyof typeof this.dbToSync);
@@ -202,7 +202,7 @@ export class SyncManager {
           const table = this.dbToSync[op.table as keyof typeof this.dbToSync] as EntityTable<SyncableObject, 'id'>;
           const obj = await table.get(op.object_id);
           if (!obj) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.push(obj, op.table as keyof typeof this.dbToSync);
@@ -212,7 +212,7 @@ export class SyncManager {
         case "DELETE": {
           const obj = await this.client.from('backup').select('deleted_at').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
           if (obj.data == null || obj.data.deleted_at != null) {
-            await this.operationDb.pendingOperations.delete(op.id);
+            await this.removePendingOperation(op.id);
             break;
           }
           const res = await this.delete(op.object_id, op.table as keyof typeof this.dbToSync);
@@ -263,6 +263,10 @@ export class SyncManager {
     await this.operationDb.pendingOperations.update(operation.id, res);
 
     return res;
+  }
+
+  private async removePendingOperation(id: string) {
+    await this.operationDb.pendingOperations.delete(id);
   }
 
   public async pullUpdates(tableName: keyof typeof this.dbToSync): Promise<{ error: string } | null> {
@@ -337,7 +341,7 @@ export class SyncManager {
   private async onLocalInsert(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("CREATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Added ${table} → pushing to Supabase`);
@@ -348,7 +352,7 @@ export class SyncManager {
   private async onLocalUpdate(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("UPDATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Updated ${table} → pushing to Supabase`, entity);
@@ -359,7 +363,7 @@ export class SyncManager {
   private async onLocalDelete(key : string, table : string) {
     const operation = await this.getPendingOperation("DELETE", "DEXIE", table, key)
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
     console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
@@ -370,7 +374,7 @@ export class SyncManager {
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>) : Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
 
@@ -383,7 +387,7 @@ export class SyncManager {
   private async onRemoteUpdate(payload: RealtimePostgresUpdatePayload<Backup>) : Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
-      await this.operationDb.pendingOperations.delete(operation.id);
+      await this.removePendingOperation(operation.id);
       return;
     }
 
