@@ -183,8 +183,9 @@ export class SyncManager {
       .filter((op) => op.location === "SUPABASE"
     ).toArray();
 
+    console.log(`[SyncManager] Replaying ${pending.length} pending operations`);
     for (const op of pending) {
-      console.log(`[SyncManager] Replaying pending ${op.type} → ${op.table}:${op.object_id}`);
+      //console.log(`[SyncManager] Replaying pending ${op.type} → ${op.table}:${op.object_id}`);
 
       switch (op.type) {
         case "CREATE": {
@@ -221,6 +222,7 @@ export class SyncManager {
         }
       }
     }
+    console.log(`[SyncManager] Replaying operations finished`);
   }
 
   private async getPendingOperation(

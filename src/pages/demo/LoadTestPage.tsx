@@ -46,13 +46,18 @@ export default function LoadTestPage() {
     const run = async () => {
       await loadData();
       console.log("Starting Load Test");
-      while (!cancelled && testRunning) {
+      const maxEntity = 100;
+      let entityNumber = 0;
+      while (!cancelled && testRunning && entityNumber < maxEntity) {
         const collection = newCollection()
         await db.collections.put(collection);
-        await sleep(1000);
-        await db.collections.delete(collection.id);
-        await sleep(1000);
+        //await sleep(1000);
+        //await db.collections.delete(collection.id);
+        //await sleep(1000);
+        entityNumber++;
       }
+      setTestRunning(false);
+      console.log("Finished Load Test");
     };
     void run();
 

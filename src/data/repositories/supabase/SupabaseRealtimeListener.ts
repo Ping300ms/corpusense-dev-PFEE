@@ -37,11 +37,11 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
 
   constructor({
                 backoffMultiplier = 1.5,
-                baseRetryDelay = 30_000,
+                baseRetryDelay = 3_000,
                 channelBaseName,
                 databaseSchemaName = 'public',
                 maxRetries = 10,
-                maxRetryDelay = 300_000,
+                maxRetryDelay = 30_000,
                 onInsert,
                 onUpdate,
                 onDelete,

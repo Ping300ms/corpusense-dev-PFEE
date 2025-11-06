@@ -65,7 +65,8 @@ const Layout = () => {
   }, [])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    const {error} = await supabase.auth.signOut()
+    if (error != null) console.log(error);
     setUser(null)
     await navigate.goToHome()
   }

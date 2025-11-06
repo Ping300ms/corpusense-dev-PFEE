@@ -19,6 +19,7 @@ export class DexieObservableListener {
     this.callbacks = callbacks;
 
     db.on('changes', (changes) => {
+      console.log(changes);
       for (const change of changes) {
         if (!SyncableTables.includes(change.table)) continue;
 
