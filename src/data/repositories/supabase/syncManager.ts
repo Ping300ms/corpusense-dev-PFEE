@@ -25,6 +25,9 @@ export class SyncManager {
   private readonly defaultPullDate = '2003-01-05T08:01:00Z'; // date before project start
   private static instance: SyncManager | null = null;
 
+  private static operationTimings: Record<string, number> = {}; // id -> start time
+  private static operationDurations: number[] = [];
+
   private readonly client: SupabaseClient;
   private readonly dbToSync: typeof db;
   private readonly operationDb: typeof dbSync;
@@ -53,6 +56,28 @@ export class SyncManager {
   ): SyncManager {
     if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
     return SyncManager.instance;
+  }
+
+  private static startTimer(id: string) {
+    SyncManager.operationTimings[id] = performance.now();
+  }
+
+  private static endTimer(id: string) {
+    const start = SyncManager.operationTimings[id];
+    if (start !== undefined) {
+      const duration = performance.now() - start;
+      SyncManager.operationDurations.push(duration);
+      delete SyncManager.operationTimings[id];
+
+      const total = SyncManager.operationDurations.reduce((a, b) => a + b, 0);
+      const avg = total / SyncManager.operationDurations.length;
+      const max = Math.max(...SyncManager.operationDurations);
+
+      console.log(
+        `[⏱️ SyncManager] Operation ${id} completed in ${duration.toFixed(2)}ms | ` +
+        `avg: ${avg.toFixed(2)}ms | max: ${max.toFixed(2)}ms`
+      );
+    }
   }
 
   private initializeListeners() {
@@ -95,7 +120,7 @@ export class SyncManager {
   public async create(obj: SyncableObject, type: keyof typeof this.dbToSync): Promise<{ data: null, error: PostgrestError} | { data: SyncableObject, error: null} | null> {
     const operation = await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
     const userId = await this.getUser();
-    if (!userId) return null;
+    if (userId == null) return null;
 
     const update = syncableToUint8(obj);
 
@@ -117,7 +142,7 @@ export class SyncManager {
     const operation = await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
     const userId = await this.getUser();
-    if (!userId) return null;
+    if (userId == null) return null;
 
     const { error } = await this.client
       .from('backup')
@@ -137,7 +162,7 @@ export class SyncManager {
     const operation = await this.addPendingOperation("UPDATE", "SUPABASE", type, obj.id);
 
     const userId = await this.getUser();
-    if (!userId) return null;
+    if (userId == null) return null;
 
     const localUpdate = syncableToUint8(obj);
 
@@ -241,15 +266,16 @@ export class SyncManager {
   }
 
   private async addPendingOperation(
-    type: "CREATE" | "UPDATE" | "DELETE",
-    location: "DEXIE" | "SUPABASE",
+    type: 'CREATE' | 'UPDATE' | 'DELETE',
+    location: 'DEXIE' | 'SUPABASE',
     table: string,
     object_id: string
   ): Promise<SyncPendingOperations> {
-    const operation = await this.getPendingOperation(type, location, table, object_id);
+    const existing = await this.getPendingOperation(type, location, table, object_id);
 
-    if (operation === undefined) {
-      const res = {
+    let res: SyncPendingOperations;
+    if (existing === undefined) {
+      res = {
         id: uuid(),
         type,
         location,
@@ -258,22 +284,28 @@ export class SyncManager {
         date: new Date(),
       } as SyncPendingOperations;
       await this.operationDb.pendingOperations.add(res);
-      return res;
+    } else {
+      res = { ...existing, date: new Date() } as SyncPendingOperations;
+      await this.operationDb.pendingOperations.update(existing.id, res);
     }
 
-    const res = {...operation, date: new Date()} as SyncPendingOperations;
-    await this.operationDb.pendingOperations.update(operation.id, res);
-
+    SyncManager.startTimer(res.id);
     return res;
   }
 
   private async removePendingOperation(id: string) {
     await this.operationDb.pendingOperations.delete(id);
+    SyncManager.endTimer(id);
   }
 
   public async pullUpdates(tableName: keyof typeof this.dbToSync): Promise<{ error: string } | null> {
+    const start = performance.now(); // ⏱️ start timer
+
     const user = await this.getUser();
-    if (!user) return { error: `[SELECT] Sync: error not logged in` };
+    if (user == null) {
+      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) aborted (not logged in)`);
+      return { error: `[SELECT] Sync: error not logged in` };
+    }
 
     const requestDate = new Date();
 
@@ -283,12 +315,19 @@ export class SyncManager {
       .eq('user_id', user)
       .eq('object_type', tableName)
       .gt('updated_at', this.lastPull?.toISOString() ?? '')
-      .order('updated_at', { ascending: true});
+      .order('updated_at', { ascending: true });
 
-    if (error) return { error: `[PULL] Sync: error pulling from Supabase ${tableName} updates ${error.message}` };
-    if (remotes == null || remotes.length === 0) return null;
+    if (error) {
+      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) failed in ${(performance.now() - start).toFixed(2)} ms`);
+      return { error: `[PULL] Sync: error pulling from Supabase ${tableName} updates ${error.message}` };
+    }
 
-    const objectIds : string[] = remotes.map((backup) => backup.object_id);
+    if (remotes == null || remotes.length === 0) {
+      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) completed (no updates) in ${(performance.now() - start).toFixed(2)} ms`);
+      return null;
+    }
+
+    const objectIds: string[] = remotes.map<string>((backup) => backup.object_id);
 
     const table = this.dbToSync[tableName] as unknown as EntityTable<SyncableObject, 'id'>;
     const locals = await table.bulkGet(objectIds);
@@ -303,30 +342,54 @@ export class SyncManager {
       const local = locals[i];
 
       if (remote.deleted_at != null) {
-        // Edge case : remote delete while offline update, delete wins
         if (!local) continue;
-        syncOperations.push({id: uuid(), type: "DELETE", location: "DEXIE", object_id: remote.object_id, table: tableName, date: new Date()});
+        syncOperations.push({
+          id: uuid(),
+          type: "DELETE",
+          location: "DEXIE",
+          object_id: remote.object_id,
+          table: tableName,
+          date: new Date(),
+        });
         toDelete.push(remote.object_id);
         continue;
       }
 
       if (!local) {
-        syncOperations.push({id: uuid(), type: "CREATE", location: "DEXIE", object_id: remote.object_id, table: tableName, date: new Date()});
+        syncOperations.push({
+          id: uuid(),
+          type: "CREATE",
+          location: "DEXIE",
+          object_id: remote.object_id,
+          table: tableName,
+          date: new Date(),
+        });
         toCreate.push(uint8ToSyncable(decodeUintFromJSONB(remote.content)));
         continue;
       }
 
-      // Check if conflict
       const operation = await this.getPendingOperation("UPDATE", "SUPABASE", tableName, local.id);
       let finalObject: SyncableObject;
-      if (operation) { // conflict
-        const remoteDoc = uint8toDoc(decodeUintFromJSONB(remote.content))
-        finalObject = uint8ToSyncable(mergeDocs({ doc: syncableToDoc(local), date: operation.date }, { doc: remoteDoc, date: remote.updated_at }).remote);
+      if (operation) {
+        const remoteDoc = uint8toDoc(decodeUintFromJSONB(remote.content));
+        finalObject = uint8ToSyncable(
+          mergeDocs(
+            { doc: syncableToDoc(local), date: operation.date },
+            { doc: remoteDoc, date: remote.updated_at }
+          ).remote
+        );
       } else {
-        finalObject = uint8ToSyncable(decodeUintFromJSONB(remote.content))
+        finalObject = uint8ToSyncable(decodeUintFromJSONB(remote.content));
       }
 
-      syncOperations.push({id: uuid(), type: "UPDATE", location: "DEXIE", object_id: remote.object_id, table: tableName, date: new Date()});
+      syncOperations.push({
+        id: uuid(),
+        type: "UPDATE",
+        location: "DEXIE",
+        object_id: remote.object_id,
+        table: tableName,
+        date: new Date(),
+      });
       toUpdate.push(finalObject);
     }
 
@@ -337,8 +400,13 @@ export class SyncManager {
 
     localStorage.setItem(`${this.userId}-lastPull`, requestDate.toString());
     this.lastPull = requestDate;
+
+    const duration = performance.now() - start;
+    console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) completed (${remotes.length} changes) in ${duration.toFixed(2)} ms`);
+
     return null;
   }
+
 
   private async onLocalInsert(entity : SyncableObject, table : string) {
     const operation = await this.getPendingOperation("CREATE", "DEXIE", table, entity.id)
