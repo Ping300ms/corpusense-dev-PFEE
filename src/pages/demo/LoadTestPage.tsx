@@ -16,6 +16,8 @@ export default function LoadTestPage() {
   const [models, setModels] = useState<DataModel[]>([]);
   const [testRunning, setTestRunning] = useState(false)
 
+
+
   const loadData = async () => {
     setCollections(await db.collections.toArray());
     setCollectionContent(await db.collectionContents.toArray());
@@ -33,7 +35,6 @@ export default function LoadTestPage() {
       tags: [uuidv4(), uuidv4()],
       modelId: uuidv4(),
       contentSize: 0,
-      updated_at: new Date().toISOString(),
       offline: false
     };
   }
@@ -110,7 +111,7 @@ function EntitySection({ title, data, table, onDelete, linkBase } : { title: str
       <ul className="divide-y divide-gray-200">
         {data.map((d: SyncableObject) => (
           <li key={d.id} className="flex justify-between py-1">
-            <span>{d.id} - {d.updated_at}</span>
+            <span>{d.id}</span>
           </li>
         ))}
       </ul>
