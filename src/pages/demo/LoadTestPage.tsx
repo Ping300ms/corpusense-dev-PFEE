@@ -51,9 +51,9 @@ export default function LoadTestPage() {
       while (!cancelled && testRunning && entityNumber < maxEntity) {
         const collection = newCollection()
         await db.collections.put(collection);
-        //await sleep(1000);
-        //await db.collections.delete(collection.id);
-        //await sleep(1000);
+        await sleep(1000);
+        await db.collections.delete(collection.id);
+        await sleep(1000);
         entityNumber++;
       }
       setTestRunning(false);

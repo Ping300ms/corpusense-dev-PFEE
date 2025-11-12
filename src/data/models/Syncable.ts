@@ -4,6 +4,8 @@ import { DataModel } from '@/data/models/DataModel.ts';
 
 export type SyncableObject = Annotation | CollectionContent | CollectionDetails | DataModel;
 
+export type SyncableObjectNames = "annotations" | "collections" | "collectionContents" | "models";
+
 export const SyncableTables = [
   "annotations",
   "collections",

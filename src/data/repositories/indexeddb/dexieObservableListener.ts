@@ -8,7 +8,7 @@ import Dexie from 'dexie';
 
 export interface OnLocalChangeCallbacks {
   onAdd?: (entity: SyncableObject, table: string) => void | Promise<void>;
-  onUpdate?: (entity: SyncableObject, table: string) => void | Promise<void>;
+  onUpdate?: (newObject: SyncableObject, oldObject: SyncableObject, table: string) => void | Promise<void>;
   onDelete?: (key: string, table: string) => void | Promise<void>;
 }
 
@@ -45,7 +45,7 @@ export class DexieObservableListener {
   }
 
   private onUpdate(change: IUpdateChange): void {
-    void this.callbacks.onUpdate?.(change.obj as SyncableObject, change.table);
+    void this.callbacks.onUpdate?.(change.obj as SyncableObject, change.obj, change.table);
   }
 
   private onDelete(change: IDeleteChange): void {
