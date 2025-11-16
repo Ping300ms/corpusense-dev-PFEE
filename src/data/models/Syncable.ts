@@ -6,9 +6,9 @@ export type SyncableObject = Annotation | CollectionContent | CollectionDetails 
 
 export type SyncableObjectNames = "annotations" | "collections" | "collectionContents" | "models";
 
-export const SyncableTables = [
-  "annotations",
+export const SyncableTables : SyncableObjectNames[] = [
   "collections",
   "collectionContents",
+  "annotations",
   "models"
 ];

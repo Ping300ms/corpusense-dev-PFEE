@@ -9,15 +9,17 @@ import {
 import { db, dbSync } from "@/data/repositories/indexeddb/db.ts";
 import { DexieError, EntityTable } from 'dexie';
 import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
-import { SyncableObject, SyncableTables } from '@/data/models/Syncable.ts';
+import { SyncableObject, SyncableObjectNames, SyncableTables } from '@/data/models/Syncable.ts';
 import Backup from '@/data/models/Backup.ts';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
-import { SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseRealtimeListener.ts';
+import { ListenerState, SupabaseRealtimeListener } from '@/data/repositories/supabase/SupabaseRealtimeListener.ts';
 import { SupabaseListenerProperties } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
 import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 import { v4 as uuid } from 'uuid';
 import { Annotation } from '@/data/models/Annotation.ts';
-import { CollectionContent } from '@/data/models/Collection.ts';
+import { CollectionContent, CollectionDetails } from '@/data/models/Collection.ts';
+import { DataModel } from '@/data/models/DataModel.ts';
+import { MergeParameters } from '@/data/repositories/supabase/__test__/mergeParameters.ts';
 
 export class SyncManager {
   //region Variables
@@ -56,6 +58,12 @@ export class SyncManager {
   ): SyncManager {
     if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
     return SyncManager.instance;
+  }
+
+  public getState(): ListenerState {
+    const state = this.realtimeListener?.getState();
+    if (state == undefined) return ListenerState.DISCONNECTED;
+    return state;
   }
 
   //region Perf measurements
@@ -120,7 +128,7 @@ export class SyncManager {
   }
 
   //region Supabase CRUD
-  public async read(object_id: string, type: keyof typeof this.dbToSync) : Promise<{ data: null, error: PostgrestError} | { data: Backup | null, error: null}> {
+  public async read(object_id: string, type: SyncableObjectNames) : Promise<{ data: null, error: PostgrestError} | { data: Backup | null, error: null}> {
     const {data, error} = await this.client
       .from("backup")
       .select()
@@ -132,7 +140,7 @@ export class SyncManager {
     return {data, error: null};
   }
 
-  public async create(obj: SyncableObject, type: keyof typeof this.dbToSync, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: SyncableObject, error: null} | null> {
+  public async create(obj: SyncableObject, type: SyncableObjectNames, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: SyncableObject, error: null} | null> {
     if (op == undefined) op = await this.addPendingOperation("CREATE", "SUPABASE", type, obj.id);
     const userId = await this.getUser();
     if (userId == null) return null;
@@ -166,7 +174,7 @@ export class SyncManager {
     return {data: obj, error: null};
   }
 
-  public async delete(id: string, type: keyof typeof this.dbToSync, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: string, error: null} | null> {
+  public async delete(id: string, type: SyncableObjectNames, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: string, error: null} | null> {
     if (op == undefined) op = await this.addPendingOperation("DELETE", "SUPABASE", type, id);
 
     const userId = await this.getUser();
@@ -185,7 +193,7 @@ export class SyncManager {
     return {data: id, error: null};
   }
 
-  public async push(newObj: SyncableObject, type: keyof typeof this.dbToSync, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: SyncableObject, error: null} | null> {
+  public async push(newObj: SyncableObject, type: SyncableObjectNames, op? : SyncPendingOperations): Promise<{ data: null, error: PostgrestError} | { data: SyncableObject, error: null} | null> {
     if (op == undefined) op = await this.addPendingOperation("UPDATE", "SUPABASE", type, newObj.id);
 
     const userId = await this.getUser();
@@ -202,7 +210,9 @@ export class SyncManager {
     if (selectError) return { data: null, error: selectError };
 
     if (remote?.content != null) {
-      newObj = this.merge(newObj, op.date, remote.content, new Date(remote.updated_at), op.old);
+      newObj = this.merge(newObj, op.date, remote.content, new Date(remote.updated_at), type, op.old);
+
+      // check if CollectionContent update CollectionDetails.contentSize
 
       // Save merge to local
       await this.addPendingOperation("UPDATE", "DEXIE", type, newObj.id);
@@ -299,7 +309,7 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.create(obj, op.table as keyof typeof this.dbToSync, op);
+          const res = await this.create(obj, op.table, op);
           if (res?.error != undefined) {
             if (res.error.code === "23505") await this.removePendingOperation(op.id);
             else this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
@@ -313,7 +323,7 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.push(obj, op.table as keyof typeof this.dbToSync, op);
+          const res = await this.push(obj, op.table, op);
           if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
           break;
         }
@@ -323,7 +333,7 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.delete(op.object_id, op.table as keyof typeof this.dbToSync, op);
+          const res = await this.delete(op.object_id, op.table, op);
           if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
           break;
         }
@@ -332,141 +342,150 @@ export class SyncManager {
     console.log(`[SyncManager] Replaying operations finished`);
   }
 
-  public async pullUpdates(tableName: keyof typeof this.dbToSync): Promise<{ error: string } | null> {
+  public async pullUpdates(): Promise<{ error: string } | null> {
     const start = performance.now(); // ⏱️ start timer
 
     const user = await this.getUser();
     if (user == null) {
-      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) aborted (not logged in)`);
+      console.log(`[⏱️ SyncManager] pullUpdates aborted (not logged in)`);
       return { error: `[SELECT] Sync: error not logged in` };
     }
 
     const requestDate = new Date();
 
-    const { data: remotes, error } = await this.client
-      .from('backup')
-      .select('object_id, content, updated_at, deleted_at')
-      .eq('object_type', tableName)
-      .gt('updated_at', this.lastPull?.toISOString() ?? this.defaultPullDate)
-      .order('updated_at', { ascending: true });
+    for (const type of SyncableTables) {
+      // TODO check pull limit 1000
+      const { data: remotes, error } = await this.client
+        .from('backup')
+        .select('object_id, content, updated_at, deleted_at')
+        .eq('object_type', type)
+        .gt('updated_at', this.lastPull?.toISOString() ?? this.defaultPullDate)
+        .order('updated_at', { ascending: true });
 
-    if (error) {
-      this.remoteRequestErrorHandler("", "GET",error)
-      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) failed in ${(performance.now() - start).toFixed(2)} ms`);
-      return { error: `[PULL] Sync: error pulling from Supabase ${tableName} updates ${error.message}` };
-    }
+      if (error) {
+        this.remoteRequestErrorHandler("", "GET", error)
+        console.log(`[⏱️ SyncManager] pullUpdates(${String(type)}) failed in ${(performance.now() - start).toFixed(2)} ms`);
+        return { error: `[PULL] Sync: error pulling from Supabase ${type} updates ${error.message}` };
+      }
 
-    if (remotes == null || remotes.length === 0) {
-      console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) completed (no updates) in ${(performance.now() - start).toFixed(2)} ms`);
-      return null;
-    }
+      if (remotes == null || remotes.length === 0) {
+        console.log(`[⏱️ SyncManager] pullUpdates(${String(type)}) completed (no updates) in ${(performance.now() - start).toFixed(2)} ms`);
+        return null;
+      }
 
-    const objectIds: string[] = remotes.map<string>((backup) => backup.object_id as string);
+      const objectIds: string[] = remotes.map<string>((backup) => backup.object_id as string);
 
-    const table = this.dbToSync[tableName] as unknown as EntityTable<SyncableObject, 'id'>;
-    const locals = await table.bulkGet(objectIds);
+      const table = this.dbToSync[type] as unknown as EntityTable<SyncableObject, 'id'>;
+      const locals = await table.bulkGet(objectIds);
 
-    const toCreate: SyncableObject[] = [];
-    const toUpdate: SyncableObject[] = [];
-    const toDelete: string[] = [];
-    const syncOperations: SyncPendingOperations[] = [];
+      const toCreate: SyncableObject[] = [];
+      const toUpdate: SyncableObject[] = [];
+      const toDelete: string[] = [];
+      const syncOperations: SyncPendingOperations[] = [];
 
-    for (let i = 0; i < locals.length; i++) {
-      const remote = remotes[i];
-      const local = locals[i];
+      for (let i = 0; i < locals.length; i++) {
+        const remote = remotes[i];
+        const local = locals[i];
 
-      if (remote.deleted_at != null) {
-        if (!local) continue;
+        if (remote.deleted_at != null) {
+          if (!local) continue;
+          syncOperations.push({
+            id: uuid(),
+            type: "DELETE",
+            location: "DEXIE",
+            object_id: remote.object_id as string,
+            table: type,
+            date: new Date(),
+            old: null
+          });
+          toDelete.push(remote.object_id as string);
+          continue;
+        }
+
+        if (!local) {
+          syncOperations.push({
+            id: uuid(),
+            type: "CREATE",
+            location: "DEXIE",
+            object_id: remote.object_id as string,
+            table: type,
+            date: new Date(),
+            old: null
+          });
+          toCreate.push(remote.content as SyncableObject);
+          continue;
+        }
+
+        const operation = await this.getPendingOperation("UPDATE", "SUPABASE", type, local.id);
+        if (operation != undefined) continue; // replay pending will be in charge of the merge
+
         syncOperations.push({
           id: uuid(),
-          type: "DELETE",
+          type: "UPDATE",
           location: "DEXIE",
-          object_id: remote.object_id as string,
-          table: tableName,
+          object_id: local.id,
+          table: type,
           date: new Date(),
           old: null
         });
-        toDelete.push(remote.object_id as string);
-        continue;
+        toUpdate.push(remote.content as SyncableObject);
       }
 
-      if (!local) {
-        syncOperations.push({
-          id: uuid(),
-          type: "CREATE",
-          location: "DEXIE",
-          object_id: remote.object_id as string,
-          table: tableName,
-          date: new Date(),
-          old: null
-        });
-        toCreate.push(remote.content as SyncableObject);
-        continue;
-      }
+      await this.operationDb.pendingOperations.bulkAdd(syncOperations);
+      await table.bulkDelete(toDelete);
+      await table.bulkAdd(toCreate);
+      await table.bulkPut(toUpdate);
 
-      const operation = await this.getPendingOperation("UPDATE", "SUPABASE", tableName, local.id);
-      if (operation != undefined) continue; // replay pending will be in charge of the merge
-
-      syncOperations.push({
-        id: uuid(),
-        type: "UPDATE",
-        location: "DEXIE",
-        object_id: local.id,
-        table: tableName,
-        date: new Date(),
-        old: null
-      });
-      toUpdate.push(remote.content as SyncableObject);
+      console.log(`[⏱️ SyncManager] pull ${type} updates completed (${remotes.length} changes)`);
     }
-
-    await this.operationDb.pendingOperations.bulkAdd(syncOperations);
-    await table.bulkDelete(toDelete);
-    await table.bulkAdd(toCreate);
-    await table.bulkPut(toUpdate);
 
     localStorage.setItem(`${this.userId}-lastPull`, requestDate.toString());
     this.lastPull = requestDate;
 
     const duration = performance.now() - start;
-    console.log(`[⏱️ SyncManager] pullUpdates(${String(tableName)}) completed (${remotes.length} changes) in ${duration.toFixed(2)} ms`);
+    console.log(`[⏱️ SyncManager] pullUpdates completed in ${duration.toFixed(2)} ms`);
 
     return null;
   }
   //endregion
 
+  public async Share(_objectId: string, _sharedUserMail: string): Promise<{ error: string } | null> {
+    return null;
+  }
+
   //region Local handler
   // TODO adapt to handle bulk
-  private async onLocalInsert(entity : SyncableObject, table : string) {
+  private async onLocalInsert(entity : SyncableObject, table : SyncableObjectNames) {
     const operation = await this.getPendingOperation("CREATE", "DEXIE", table, entity.id)
     if (operation !== undefined) {
       await this.removePendingOperation(operation.id);
       return;
     }
-    console.log(`[Dexie] Added ${table} → pushing to Supabase`);
-    const result = await this.create(entity, table as keyof typeof this.dbToSync);
+    if (this.userId !== null) console.log(`[Dexie] Added ${table} → pushing to Supabase`);
+    const result = await this.create(entity, table);
     if (result?.error) this.remoteRequestErrorHandler(entity.id, "CREATE", result?.error);
   }
 
-  private async onLocalUpdate(newObject : SyncableObject, oldObject : SyncableObject, table : string) {
+  private async onLocalUpdate(newObject : SyncableObject, oldObject : SyncableObject, table : SyncableObjectNames) {
     const operation = await this.getPendingOperation("UPDATE", "DEXIE", table, newObject.id)
     if (operation !== undefined) {
       await this.removePendingOperation(operation.id);
       return;
     }
-    console.log(`[Dexie] Updated ${table} → pushing to Supabase`, newObject);
+    if (this.userId !== null) console.log(`[Dexie] Updated ${table} → pushing to Supabase`, newObject);
     const op = await this.addPendingOperation("UPDATE", "SUPABASE", table, newObject.id, oldObject);
-    const result = await this.push(newObject, table as keyof typeof this.dbToSync, op);
+    const result = await this.push(newObject, table, op);
     if (result?.error) this.remoteRequestErrorHandler(newObject.id, "UPDATE", result?.error);
   }
 
-  private async onLocalDelete(key : string, table : string) {
+  private async onLocalDelete(key : string, table : SyncableObjectNames) {
     const operation = await this.getPendingOperation("DELETE", "DEXIE", table, key)
     if (operation !== undefined) {
       await this.removePendingOperation(operation.id);
       return;
     }
-    console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
-    const result = await this.delete(key, table as keyof typeof this.dbToSync);
+    if (this.userId !== null) console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
+    const result = await this.delete(key, table);
     if (result?.error) this.remoteRequestErrorHandler(key, "DELETE", result?.error);
   }
   //endregion
@@ -514,6 +533,8 @@ export class SyncManager {
     const table = this.dbToSync[object_type as keyof typeof this.dbToSync] as unknown as EntityTable<SyncableObject, 'id'>;
     const local = await table.get(object_id);
 
+    // TODO check annotation for prev and next to be valid
+
     if (local === undefined) { // local doesn't exist
       await this.addPendingOperation("CREATE", "DEXIE", backup.object_type, backup.object_id);
       try {
@@ -527,20 +548,6 @@ export class SyncManager {
       }
       return { error: null };
     }
-
-    /*
-    const operation = await this.getPendingOperation('UPDATE', 'SUPABASE', object_type, object_id);
-    let finalObject : SyncableObject;
-    if (operation !== undefined) {
-      console.log("merging", local, uint8ToSyncable(remote));
-      const merged = merge({ obj: local, date: operation.date
-      }, { obj: remote, date: new Date(backup.updated_at) });
-      finalObject = merged.local;
-      // TODO test to know if it's a reachable case and it's a correct way to do it
-    } else {
-      finalObject = uint8ToSyncable(remote);
-    }
-    */
 
     console.log(`[Supabase] Applying remote ${object_type} ${object_id}`, content);
     await this.addPendingOperation("UPDATE", "DEXIE", backup.object_type, backup.object_id);
@@ -585,9 +592,7 @@ export class SyncManager {
   public async InitSync() {
     if (this.isSyncing) return; // prevent parallel syncing
     this.isSyncing = true;
-    for (const table of SyncableTables) {
-      await this.pullUpdates(table as keyof typeof this.dbToSync);
-    }
+    await this.pullUpdates();
     await this.replayPendingOperations();
     this.isSyncing = false;
   }
@@ -609,14 +614,57 @@ export class SyncManager {
   }
   //endregion
 
-  private merge(newLocal : SyncableObject, _localDate : Date, _remote : SyncableObject, _remoteDate : Date, _oldLocal : SyncableObject | null = null) : SyncableObject {
+  private merge(newLocal : SyncableObject, localDate : Date, remote : SyncableObject, remoteDate : Date, type: SyncableObjectNames, oldLocal : SyncableObject | null = null) : SyncableObject {
+    const param = {
+      newLocal,
+      localDate,
+      remote,
+      remoteDate,
+      oldLocal,
+    };
+    switch (type) {
+      case 'annotations':
+        return this.mergeAnnotation(param as MergeParameters<Annotation>);
+      case 'collections':
+        return this.mergeCollectionDetails(param as MergeParameters<CollectionDetails>);
+      case 'collectionContents':
+        return this.mergeCollectionContent(param as MergeParameters<CollectionContent>);
+      case 'models':
+        return this.mergeDataModels(param as MergeParameters<DataModel>);
+    }
+  }
+
+  private mergeString(param : MergeParameters<string>) : string {
+    // changes made on top of remote or no changes
+    if (param.oldLocal === param.remote || param.newLocal === param.remote)
+      return param.newLocal;
+    if (param.newLocal.length <= 36) // uuid length === 36
+      return param.localDate > param.remoteDate ? param.newLocal : param.remote;
+
+    // simplest concat logic
+    // will be fixed by user intervention for now
+    // FIXME
+    return param.remote + param.newLocal;
+  }
+
+  private mergeAnnotation(param : MergeParameters<Annotation>) : Annotation {
+    // next and prev must be determinist : change new locals order to last remote order + 1
+    // TODO ask check precise next, prev and partOf logic
+    return param.newLocal;
+  }
+
+  private mergeCollectionDetails(param : MergeParameters<CollectionDetails>) : CollectionDetails {
+    return param.newLocal;
+  }
+
+  private mergeCollectionContent(param : MergeParameters<CollectionContent>) : CollectionContent {
+    // content must be determinist : change new locals CollectionElements must be placed at the end of remote
     // TODO
-    // if old check diff with new
-    // try to concat local and remote for long text
-    // last write wins on foreign key fields
-    // check external constraint like Annotation order or CollectionDetails contentSize
-    // apply modifications in local
-    return newLocal;
+    return param.newLocal;
+  }
+
+  private mergeDataModels(param : MergeParameters<DataModel>) : DataModel {
+    return param.newLocal;
   }
 
   //region Error handlers

@@ -1,4 +1,3 @@
-/* eslint-disable */
 import {
   REALTIME_SUBSCRIBE_STATES,
   RealtimePostgresDeletePayload,
@@ -10,12 +9,13 @@ import {
   SupabaseListenerProperties
 } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
 
-enum ListenerState {
+export enum ListenerState {
   DISCONNECTED = 'disconnected',
   SUBSCRIBING = 'subscribing',
   SUBSCRIBED = 'subscribed',
 }
 
+/* eslint-disable-next-line */
 export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> {
   private readonly backoffMultiplier: number;
   private readonly baseRetryDelay: number;
@@ -87,7 +87,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.retryTimeout = undefined
   }
 
-  private retryToSubscribe = async () => {
+  private retryToSubscribe = () => {
     this.isRetrying = true
     this.retryCount += 1
 
@@ -104,7 +104,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     clearTimeout(this.retryTimeout)
     this.retryTimeout = setTimeout(() => {
       this.isRetrying = false
-      this.subscribe()
+      void this.subscribe()
     }, delay)
   }
 
@@ -153,19 +153,19 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
           void this.onDelete?.(payload);
         },
       )
-      .subscribe(async (status, error) => {
+      .subscribe((status, error) => {
         return this.subscribeStateHandler(status, error);
       })
   }
 
-  private async subscribeStateHandler(status: REALTIME_SUBSCRIBE_STATES, error?: Error) {
+  private subscribeStateHandler(status: REALTIME_SUBSCRIBE_STATES, error?: Error) {
     console.info(`Channel status: ${status}`)
 
     if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
       console.info('Realtime subscription established')
       this.listenerState = ListenerState.SUBSCRIBED;
       this.resetRetries();
-      this.onSubscribed?.();
+      void this.onSubscribed?.();
       return
     }
 
@@ -185,7 +185,11 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
       status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
     ) {
       this.listenerState = ListenerState.DISCONNECTED;
-      await this.retryToSubscribe()
+      this.retryToSubscribe()
     }
+  }
+
+  public getState(): ListenerState {
+    return this.listenerState;
   }
 }
