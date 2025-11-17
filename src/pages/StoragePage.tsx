@@ -20,6 +20,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const CANTALOUPE_URL = import.meta.env.VITE_CANTALOUPE_URL as string;
+const STORAGE_URL = import.meta.env.VITE_SUPABASE_STORAGE_URL as string;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 // const reduceBlob = imageBlobReduce();
 
@@ -30,6 +32,49 @@ type ImageData = {
   fullImageUrl?: string;
   thumbImageUrl?: string;
 };
+
+export type PdfPageInfo = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  rotation: number;
+  dataUrl?: string;
+};
+
+
+export type PreviewOptions = {
+  scale?: number;
+  format?: "image/png" | "image/jpeg";
+  quality?: number;
+  maxPages?: number;
+};
+
+async function getPdfPagesFromFile(file: File): Promise<PdfPageInfo[]> {
+  const blobUrl = URL.createObjectURL(file);
+
+  try {
+    const pdf = await pdfjsLib.getDocument({ url: blobUrl }).promise;
+
+    const pages: PdfPageInfo[] = [];
+    const scale = 1; // échelle neutre, sert juste à obtenir dimensions logiques
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale });
+
+      pages.push({
+        pageNumber,
+        width: viewport.width,
+        height: viewport.height,
+        rotation: viewport.rotation,
+      });
+    }
+
+    return pages;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
 
 async function renderPdfToImages(file: File): Promise<ImageData[]> {
   const arrayBuffer = await file.arrayBuffer();
@@ -113,6 +158,8 @@ const StoragePage = () => {
   const { existingManifests, loading, error } = useUserManifests();
   const [uploading, setUploading] = useState(false);
   const isConnected = useAppSelector(selectAuthStatus) === 'authenticated';
+  const [pages, setPages] = useState<PdfPageInfo[]>([]);
+  const [images, setImages] = useState<ImageData[]>([]);
 
   if (!isConnected) {
     return (
@@ -127,9 +174,13 @@ const StoragePage = () => {
 
   const hrefPath = `${window.location.origin}${import.meta.env.VITE_BASE_PATH ?? ''}/manifest?manifestId=`;
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file: File | undefined = event.target.files?.[0];
     if (file) {
+      const _pages = await getPdfPagesFromFile(file);
+      setPages([...pages, ..._pages])
+      const _images = await renderPdfToImages(file);
+      setImages([...images, ..._images]);
       setPdfFile(file);
     }
   };
@@ -210,6 +261,16 @@ const StoragePage = () => {
             onChange={(e) => setDocumentName(e.target.value)}
           />
           <Input type='file' accept='application/pdf' onChange={handleFileChange} />
+          {pages.length > 0 && (
+            <div className='flex flex-row space-y-2 gap-2'>
+              {pages.map(page => (
+                <div key={page.pageNumber} className='flex items-center space-x-2'>
+                  <img src={images[page.pageNumber].data} alt={`Page ${page.pageNumber}`}/>
+                  <span>{page.pageNumber}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {!uploading ? (
             <Button
               onClick={(e) => {
