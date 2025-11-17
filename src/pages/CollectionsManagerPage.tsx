@@ -4,21 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {FileUploader} from "react-drag-drop-files";
 import {
-  Table,
-  TableBody,
   TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import UploadFileForm from '@/components/UploadFileForm';
 import { CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import useDialog from '@/hooks/ui/useDialog';
 import useAppNavigation from '@/hooks/useAppNavigation';
 import { removeCollectionRequest } from '@/state/reducers/collections';
-import { exportCollectionsRequest } from '@/state/reducers/export';
 import { selectCollections } from '@/state/selectors/collections';
 import { selectTagsByIds } from '@/state/selectors/tags';
 import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
@@ -161,13 +154,13 @@ const CollectionsManagerPage = () => {
   const collections: CollectionDetails[] = useAppSelector(selectCollections);
   const { openImportCollectionDialog, openNewCollectionDialog, openExportCollectionDialog } =
     useDialog();
-
+  const [folders, setFolders] = useState<FileProps[]>([]);
   const [files, setFiles] = useState<FileProps[]>([]);
-  const { t } = useTranslation();
   const fileTypes = ["JPG", "PNG", "PDF"];
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string| null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -178,6 +171,7 @@ const CollectionsManagerPage = () => {
         if (!user?.id) throw new Error("Utilisateur non authentifié");
 
         console.log("User:", user);
+        setUserId(user.id);
         const { data, error: listErr } = await supabase.storage
           .from("images")
           .list(user.id, {
@@ -185,9 +179,12 @@ const CollectionsManagerPage = () => {
             offset: 0,
             sortBy: { column: "name", order: "asc" },
           });
-
         if (listErr) throw listErr;
-        setFiles(data ?? []);
+        const _folders = data.filter(item => item.id === null);
+        const _files = data.filter(item => item.id !== null);
+        setFiles(_files ?? []);
+        setFolders(_folders ?? []);
+        console.log("Folders:", _folders);
         const session = supabase.auth.getSession !== null
           ? (await supabase.auth.getSession()).data.session
           : null;
@@ -248,10 +245,17 @@ const CollectionsManagerPage = () => {
 
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
+    console.log("handleDragEnd", event);
     const {active, over} = event;
     console.log("active", active);
     console.log("over", over);
+    const folder = folders.find(_folder => _folder.id === over.id);
+    const file = files.find(_file => _file.id === active.id);
+    const { data, error } = await supabase
+      .storage
+      .from('images')
+      .move(`${userId}/${file?.name}`, `${userId}/${folder?.name}/${file?.name}`)
     /*
     const { data, error } = await supabase
   .storage
@@ -261,7 +265,7 @@ const CollectionsManagerPage = () => {
   };
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    <DndContext onDragEnd={async () => handleDragEnd()}>
     <div className='panel flex-col items-center space-y-4'>
       <section className='mt-2 ml-4 flex w-full justify-center space-x-2'>
         <button
@@ -290,38 +294,16 @@ const CollectionsManagerPage = () => {
             {t('info_number_of_collections', { number: collections.length })}
           </h2>
           <div className='flex flex-row w-full flex-wrap justify-center gap-2 overflow-y-auto p-2' >
+            {folders.map((folder, index) => (
+              <ContextMenu key={index} folder={folder}/>
+            ))}
           {collections.map((collection) => (
-              <ContextMenu key={collection.id} collection={collection}/>
+              <FileComponent key={collection.id} id={collection.id} name={collection.name}/>
           ))}
             {files.map((file, index) => (
               <FileComponent key={index} id={index} name={file.name}/>
             ))}
           </div>
-
-          <AlertDialog
-            open={collectionToDelete !== null}
-            onOpenChange={() => setCollectionToDelete(null)}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('title_are_you_sure')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('description_delete_collection')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className='soft-button bg-white'>
-                  {t('btn_no')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  className='soft-button bg-red-400 hover:bg-red-700'
-                  onClick={handleDelete}
-                >
-                  {t('btn_yes')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
         </section>
       ) : (
         <div role='alert' className='text-2xl'>

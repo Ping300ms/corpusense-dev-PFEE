@@ -63,7 +63,7 @@ const useAppNavigation = () => {
     goToWorkersManager,
     goToHome,
     goToLogin,
-    goToRegister
+    goToRegister,
     goToCollection
   };
 };
