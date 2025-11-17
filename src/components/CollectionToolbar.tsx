@@ -11,6 +11,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Toolbar from './ToolBar';
 import { Toggle } from './ui/toggle';
+import ShareButton from '@/components/ShareButton.tsx';
 
 const CollectionToolbar = memo(function CollectionToolbar({
   collectionId,
@@ -88,7 +89,8 @@ const CollectionToolbar = memo(function CollectionToolbar({
         handleExportResult={handleExportResult}
         scope={{ collectionId }}
       />
-      <div>
+      <div className='panel justify-around'>
+        <ShareButton objectSharedId={collectionId} />
         <Toggle
           className='soft-button'
           size={null}

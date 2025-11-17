@@ -23,6 +23,8 @@ import { MergeParameters } from '@/data/repositories/supabase/__test__/mergePara
 
 export class SyncManager {
   //region Variables
+  private readonly backupTableName: string = 'backup';
+  private readonly shareTableName: string = 'backup_shares';
   private readonly defaultPullDate = '2003-01-05T08:01:00Z'; // date before project start
   private static instance: SyncManager | null = null;
 
@@ -103,8 +105,8 @@ export class SyncManager {
     // Supabase → Dexie
     this.realtimeListener = new SupabaseRealtimeListener<Backup>(
       {
-        tableName : "backup",
-        channelBaseName : "backup",
+        tableName : this.backupTableName,
+        channelBaseName : this.backupTableName,
         onInsert : (p) => this.onRemoteInsert(p),
         onUpdate : (p) => this.onRemoteUpdate(p),
         onDelete : (p) => this.onRemoteDelete(p),
@@ -130,7 +132,7 @@ export class SyncManager {
   //region Supabase CRUD
   public async read(object_id: string, type: SyncableObjectNames) : Promise<{ data: null, error: PostgrestError} | { data: Backup | null, error: null}> {
     const {data, error} = await this.client
-      .from("backup")
+      .from(this.backupTableName)
       .select()
       .eq("object_id", object_id)
       .eq("object_type", type)
@@ -159,7 +161,7 @@ export class SyncManager {
       part_of = data.id;
     }
 
-    const { error } = await this.client.from('backup').upsert<Backup>({
+    const { error } = await this.client.from(this.backupTableName).upsert<Backup>({
       owner_id: userId,
       object_id: obj.id,
       object_type: type,
@@ -181,7 +183,7 @@ export class SyncManager {
     if (userId == null) return null;
 
     const { error } = await this.client
-      .from('backup')
+      .from(this.backupTableName)
       .update({ deleted_at: op.date.toISOString(), updated_at: op.date.toISOString(), change_id: op.id })
       .eq('object_id', id)
       .eq('object_type', type)
@@ -200,7 +202,7 @@ export class SyncManager {
     if (userId == null) return null;
 
     const { data: remote, error : selectError } = await this.client
-      .from('backup')
+      .from(this.backupTableName)
       .select('content, updated_at, deleted_at')
       .eq('object_id', newObj.id)
       .eq('object_type', type)
@@ -220,7 +222,7 @@ export class SyncManager {
       await table.update(newObj.id, newObj);
     }
 
-    const { error: upsertError } = await this.client.from('backup').upsert<Backup>(
+    const { error: upsertError } = await this.client.from(this.backupTableName).upsert<Backup>(
       {
         owner_id: this.userId,
         object_id: newObj.id,
@@ -328,7 +330,7 @@ export class SyncManager {
           break;
         }
         case "DELETE": {
-          const obj = await this.client.from('backup').select('deleted_at').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
+          const obj = await this.client.from(this.backupTableName).select('deleted_at').eq('object_id', op.object_id).eq('object_type', op.table).maybeSingle();
           if (obj.data == null || obj.data.deleted_at != null) {
             await this.removePendingOperation(op.id);
             break;
@@ -356,7 +358,7 @@ export class SyncManager {
     for (const type of SyncableTables) {
       // TODO check pull limit 1000
       const { data: remotes, error } = await this.client
-        .from('backup')
+        .from(this.backupTableName)
         .select('object_id, content, updated_at, deleted_at')
         .eq('object_type', type)
         .gt('updated_at', this.lastPull?.toISOString() ?? this.defaultPullDate)
@@ -449,8 +451,27 @@ export class SyncManager {
   }
   //endregion
 
-  public async Share(_objectId: string, _sharedUserMail: string): Promise<{ error: string } | null> {
-    return null;
+  public async Share(objectId: string, sharedUserMail: string, type: "collections" | "models", permission: "R" | "RW" | "RWD"): Promise<{ error: string } | null> {
+    const user = await this.getUser();
+    if (user == null) return { error: `[SHARE] error not logged in` };
+
+    const {data: sharedObject, error: sharedObjectError} = await this.read(objectId, type);
+    if (sharedObjectError || sharedObject == undefined) return {error: "object not found online"};
+    if (sharedObject.owner_id != user) return {error: "you are not the owner"};
+
+    const { data: shareResult, error: shareError } = (await supabase.rpc('share_backup_to_email', {
+      target_email: sharedUserMail,
+      target_backup_id: sharedObject.id,
+      target_permission: permission
+    })) as {data: {success: boolean, message: string} | null, error: PostgrestError | null};
+
+    if (shareError) { // Erreur SQL/RPC
+      return {error: shareError.message};
+    } else if (shareResult?.success === false) { // email inconnu ou autre validation interne
+      return {error: shareResult.message};
+    }
+
+    return null; // success
   }
 
   //region Local handler
