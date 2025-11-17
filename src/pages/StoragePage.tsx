@@ -9,7 +9,7 @@ import { useAppSelector } from '@/hooks/hooks';
 import { useUserManifests } from '@/hooks/useUserManifests';
 import { selectAuthStatus } from '@/state/selectors/auth';
 import * as pdfjsLib from 'pdfjs-dist';
-import { RefObject, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
@@ -30,41 +30,6 @@ type ImageData = {
   fullImageUrl?: string;
   thumbImageUrl?: string;
 };
-
-export type PdfPageInfo = {
-  pageNumber: number;
-  width: number;
-  height: number;
-  rotation: number;
-  dataUrl?: string;
-};
-
-async function getPdfPagesFromFile(file: File): Promise<PdfPageInfo[]> {
-  const blobUrl = URL.createObjectURL(file);
-
-  try {
-    const pdf = await pdfjsLib.getDocument({ url: blobUrl }).promise;
-
-    const pages: PdfPageInfo[] = [];
-    const scale = 1; // échelle neutre, sert juste à obtenir dimensions logiques
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      const page = await pdf.getPage(pageNumber);
-      const viewport = page.getViewport({ scale });
-
-      pages.push({
-        pageNumber,
-        width: viewport.width,
-        height: viewport.height,
-        rotation: viewport.rotation,
-      });
-    }
-
-    return pages;
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
-}
 
 async function renderPdfToImages(file: File): Promise<ImageData[]> {
   const arrayBuffer = await file.arrayBuffer();
@@ -148,7 +113,6 @@ const StoragePage = () => {
   const { existingManifests, loading, error } = useUserManifests();
   const [uploading, setUploading] = useState(false);
   const isConnected = useAppSelector(selectAuthStatus) === 'authenticated';
-  const [pages, setPages] = useState<PdfPageInfo[]>([]);
   const [images, setImages] = useState<ImageData[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string| null>(null);
@@ -199,8 +163,6 @@ const StoragePage = () => {
     const file: File | undefined = event.target.files?.[0];
     setIsUploading(true);
     if (file) {
-      const _pages = await getPdfPagesFromFile(file);
-      setPages([...pages, ..._pages])
       const _images = await renderPdfToImages(file);
       setImages([...images, ..._images]);
     }
@@ -208,12 +170,11 @@ const StoragePage = () => {
   };
 
   const handleDeletePage = (index: number) => {
-    setPages(pages.filter((_, i) => i !== index));
     setImages(images.filter((_, i) => i !== index));
   }
 
   const handleLoadPdf = () => {
-    if (pages.length === 0) {
+    if (images.length === 0) {
       alert('Veuillez sélectionner un fichier PDF.');
       return;
     }
@@ -223,7 +184,7 @@ const StoragePage = () => {
       return;
     }
 
-    const loadPdf = async () => {
+    const loadPdf = () => {
       for (let i = 0; i < images.length; i++) {
         const filename = `${i + 1}`;
         void uploadImageToSupabase(documentName, images[i].data, filename, userId ?? '');
@@ -249,7 +210,6 @@ const StoragePage = () => {
     };
     setUploading(true);
     void loadPdf();
-    setPages([]);
     setImages([]);
     setUploading(false);
   };
@@ -265,17 +225,12 @@ const StoragePage = () => {
 
   const drop = () => {
     const copyImages = [...images];
-    const copyPages = [...pages];
     if (dragItem.current === null || dragOverItem.current === null) return;
     const draggedImage = copyImages[dragItem.current];
-    const draggedPage = copyPages[dragItem.current];
     copyImages.splice(dragItem.current, 1);
-    copyPages.splice(dragItem.current, 1);
     copyImages.splice(dragOverItem.current, 0, draggedImage);
-    copyPages.splice(dragOverItem.current, 0, draggedPage);
     dragItem.current = null;
     dragOverItem.current = null;
-    setPages(copyPages);
     setImages(copyImages);
   };
 
@@ -316,9 +271,9 @@ const StoragePage = () => {
           <Input type='file' accept='application/pdf' onChange={handleFileChange}/>
           <div className={"overflow-auto max-h-[500px] p-2"}>
             {isUploading && <p>Chargement des pages...</p>}
-          {!isUploading && pages.length > 0 && images.length > 0 && (
+          {!isUploading && images.length > 0 && (
             <div className="flex flex-wrap gap-2 flex-row">
-              {pages.map((page, index) => (
+              {images.map((image, index) => (
                 <div
                   key={index}
                   className="flex flex-col items-center border-2 border-amber-100 p-3 rounded-lg w-40 relative"
@@ -327,9 +282,9 @@ const StoragePage = () => {
                   onDragEnter={(e) => dragEnter(e, index)}
                   onDragEnd={drop}
                 >
-                  <Button type="button" className=" text-red-500 bg-transparent top-0 right-0 absolute" onClick={() => handleDeletePage(pages.indexOf(page))}>X</Button>
+                  <Button type="button" className=" text-red-500 bg-transparent top-0 right-0 absolute" onClick={() => handleDeletePage(index)}>X</Button>
                   <img
-                    src={images[index].data}
+                    src={image.data}
                     alt={`Page ${index}`}
                     className=""
                   />
