@@ -249,6 +249,8 @@ const StoragePage = () => {
     };
     setUploading(true);
     void loadPdf();
+    setPages([]);
+    setImages([]);
     setUploading(false);
   };
 
