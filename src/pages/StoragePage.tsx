@@ -9,7 +9,7 @@ import { useAppSelector } from '@/hooks/hooks';
 import { useUserManifests } from '@/hooks/useUserManifests';
 import { selectAuthStatus } from '@/state/selectors/auth';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useEffect, useState } from 'react';
+import { RefObject, useEffect, useRef, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
@@ -37,14 +37,6 @@ export type PdfPageInfo = {
   height: number;
   rotation: number;
   dataUrl?: string;
-};
-
-
-export type PreviewOptions = {
-  scale?: number;
-  format?: "image/png" | "image/jpeg";
-  quality?: number;
-  maxPages?: number;
 };
 
 async function getPdfPagesFromFile(file: File): Promise<PdfPageInfo[]> {
@@ -151,7 +143,6 @@ async function uploadManifestToSupabase(folder: string, manifest: Manifest, user
 
 const StoragePage = () => {
   const { t } = useTranslation();
-  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
   const [documentName, setDocumentName] = useState<string>('');
   const [manifestUrl, setManifestUrl] = useState<string | null>(null);
   const { existingManifests, loading, error } = useUserManifests();
@@ -162,6 +153,8 @@ const StoragePage = () => {
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string| null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -210,17 +203,17 @@ const StoragePage = () => {
       setPages([...pages, ..._pages])
       const _images = await renderPdfToImages(file);
       setImages([...images, ..._images]);
-      console.log('Pages:', pages);
-      console.log('Images:', images);
-      console.log('index', _pages.indexOf(_pages[0]));
-      setPdfFiles([...pdfFiles, file]);
-      console.log('PDF Files:', pdfFiles);
     }
     setIsUploading(false);
   };
 
+  const handleDeletePage = (index: number) => {
+    setPages(pages.filter((_, i) => i !== index));
+    setImages(images.filter((_, i) => i !== index));
+  }
+
   const handleLoadPdf = () => {
-    if (pdfFiles.length === 0) {
+    if (pages.length === 0) {
       alert('Veuillez sélectionner un fichier PDF.');
       return;
     }
@@ -259,6 +252,31 @@ const StoragePage = () => {
     setUploading(false);
   };
 
+  const dragStart = (_ : React.DragEvent<HTMLDivElement>, position: number) => {
+    dragItem.current = position;
+  };
+
+  const dragEnter = (_ : React.DragEvent<HTMLDivElement>, position: number) => {
+    dragOverItem.current = position;
+  };
+
+
+  const drop = () => {
+    const copyImages = [...images];
+    const copyPages = [...pages];
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    const draggedImage = copyImages[dragItem.current];
+    const draggedPage = copyPages[dragItem.current];
+    copyImages.splice(dragItem.current, 1);
+    copyPages.splice(dragItem.current, 1);
+    copyImages.splice(dragOverItem.current, 0, draggedImage);
+    copyPages.splice(dragOverItem.current, 0, draggedPage);
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setPages(copyPages);
+    setImages(copyImages);
+  };
+
   return (
     <div className='panel h-full w-full flex-col space-y-2'>
       <h1 className='flex items-center text-2xl font-bold'>
@@ -293,22 +311,27 @@ const StoragePage = () => {
             value={documentName}
             onChange={(e) => setDocumentName(e.target.value)}
           />
-          <Input type='file' accept='application/pdf' onChange={handleFileChange} />
+          <Input type='file' accept='application/pdf' onChange={handleFileChange}/>
           <div className={"overflow-auto max-h-[500px] p-2"}>
             {isUploading && <p>Chargement des pages...</p>}
           {!isUploading && pages.length > 0 && images.length > 0 && (
             <div className="flex flex-wrap gap-2 flex-row">
-              {pages.map((page) => (
+              {pages.map((page, index) => (
                 <div
-                  key={pages.indexOf(page)}
-                  className="flex flex-col items-center border-2 border-amber-100 p-3 rounded-lg w-40"
+                  key={index}
+                  className="flex flex-col items-center border-2 border-amber-100 p-3 rounded-lg w-40 relative"
+                  draggable
+                  onDragStart={(e) => dragStart(e, index)}
+                  onDragEnter={(e) => dragEnter(e, index)}
+                  onDragEnd={drop}
                 >
+                  <Button type="button" className=" text-red-500 bg-transparent top-0 right-0 absolute" onClick={() => handleDeletePage(pages.indexOf(page))}>X</Button>
                   <img
-                    src={images[pages.indexOf(page)].data}
-                    alt={`Page ${pages.indexOf(page)}`}
+                    src={images[index].data}
+                    alt={`Page ${index}`}
                     className=""
                   />
-                  <span className="mt-2">{pages.indexOf(page)}</span>
+                  <span className="mt-2">{"Page " + index}</span>
                 </div>
               ))}
             </div>
@@ -322,6 +345,7 @@ const StoragePage = () => {
                 handleLoadPdf();
               }}
               className='w-auto self-center'
+              type='submit'
             >
               Upload
             </Button>
