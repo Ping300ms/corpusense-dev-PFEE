@@ -9,7 +9,7 @@ import { useAppSelector } from '@/hooks/hooks';
 import { useUserManifests } from '@/hooks/useUserManifests';
 import { selectAuthStatus } from '@/state/selectors/auth';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
@@ -19,9 +19,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const CANTALOUPE_URL = import.meta.env.VITE_CANTALOUPE_URL as string;
-const STORAGE_URL = import.meta.env.VITE_SUPABASE_STORAGE_URL as string;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+//const CANTALOUPE_URL = import.meta.env.VITE_CANTALOUPE_URL as string;
 
 // const reduceBlob = imageBlobReduce();
 
@@ -104,11 +102,12 @@ async function uploadImageToSupabase(
   folder: string,
   imageDataUrl: string,
   fileName: string,
+  userId: string
 ): Promise<void> {
   const imageFile = await fetch(imageDataUrl).then((res) => res.blob());
   const { data: fullImageData, error: fullImageError } = await supabase.storage
-    .from('corpusense')
-    .upload(`${folder}_${fileName}.png`, imageFile, {
+    .from('images')
+    .upload(`${userId}/${folder}_${fileName}.png`, imageFile, {
       cacheControl: '3600',
       upsert: false,
     });
@@ -134,12 +133,12 @@ async function uploadImageToSupabase(
   // }
 }
 
-async function uploadManifestToSupabase(folder: string, manifest: Manifest) {
+async function uploadManifestToSupabase(folder: string, manifest: Manifest, userId: string) {
   const jsonBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
 
   const { data, error } = await supabase.storage
-    .from('corpusense')
-    .upload(`${folder}/manifest.json`, jsonBlob, {
+    .from('images')
+    .upload(`${userId}/${folder}/manifest.json`, jsonBlob, {
       cacheControl: '3600',
       upsert: false,
     });
@@ -152,7 +151,7 @@ async function uploadManifestToSupabase(folder: string, manifest: Manifest) {
 
 const StoragePage = () => {
   const { t } = useTranslation();
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
   const [documentName, setDocumentName] = useState<string>('');
   const [manifestUrl, setManifestUrl] = useState<string | null>(null);
   const { existingManifests, loading, error } = useUserManifests();
@@ -160,6 +159,35 @@ const StoragePage = () => {
   const isConnected = useAppSelector(selectAuthStatus) === 'authenticated';
   const [pages, setPages] = useState<PdfPageInfo[]>([]);
   const [images, setImages] = useState<ImageData[]>([]);
+  const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string| null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
+        const user = userData?.user;
+        if (!user?.id) throw new Error("Utilisateur non authentifié");
+
+        setUserId(user.id);
+
+        const session = supabase.auth.getSession !== null
+          ? (await supabase.auth.getSession()).data.session
+          : null;
+        const _token = session?.access_token ?? (await supabase.auth.getUser()).data?.user?.id_token as string ?? null;
+        setToken(_token);
+        if (token === null || token === undefined) {
+          throw new Error("No auth token available; please sign in first");
+        }
+
+      } catch (e: any) {
+        console.error(e);
+      }
+      return null;
+    })();
+  }, []);
 
   if (!isConnected) {
     return (
@@ -176,17 +204,23 @@ const StoragePage = () => {
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file: File | undefined = event.target.files?.[0];
+    setIsUploading(true);
     if (file) {
       const _pages = await getPdfPagesFromFile(file);
       setPages([...pages, ..._pages])
       const _images = await renderPdfToImages(file);
       setImages([...images, ..._images]);
-      setPdfFile(file);
+      console.log('Pages:', pages);
+      console.log('Images:', images);
+      console.log('index', _pages.indexOf(_pages[0]));
+      setPdfFiles([...pdfFiles, file]);
+      console.log('PDF Files:', pdfFiles);
     }
+    setIsUploading(false);
   };
 
   const handleLoadPdf = () => {
-    if (!pdfFile) {
+    if (pdfFiles.length === 0) {
       alert('Veuillez sélectionner un fichier PDF.');
       return;
     }
@@ -197,14 +231,13 @@ const StoragePage = () => {
     }
 
     const loadPdf = async () => {
-      const images = await renderPdfToImages(pdfFile);
       for (let i = 0; i < images.length; i++) {
         const filename = `${i + 1}`;
-        void uploadImageToSupabase(documentName, images[i].data, filename);
-        images[i].fullImageUrl =
+        void uploadImageToSupabase(documentName, images[i].data, filename, userId ?? '');
+        /*_images[i].fullImageUrl =
           `${CANTALOUPE_URL}${documentName}_${filename}.png/full/max/0/default.png`;
-        images[i].thumbImageUrl =
-          `${CANTALOUPE_URL}${documentName}_${filename}.png/full/,120/0/default.png`;
+        _images[i].thumbImageUrl =
+          `${CANTALOUPE_URL}${documentName}_${filename}.png/full/,120/0/default.png`;*/
       }
       const newManifest = generateManifest(
         documentName.trim(),
@@ -216,7 +249,7 @@ const StoragePage = () => {
         })),
         documentName, // Ajouter le préfixe de nom de fichier comme dossier),
       );
-      void uploadManifestToSupabase(documentName, newManifest);
+      void uploadManifestToSupabase(documentName, newManifest, userId ?? '');
       console.log('Generated Manifest: ', newManifest);
 
       setManifestUrl(newManifest.id);
@@ -261,16 +294,26 @@ const StoragePage = () => {
             onChange={(e) => setDocumentName(e.target.value)}
           />
           <Input type='file' accept='application/pdf' onChange={handleFileChange} />
-          {pages.length > 0 && (
-            <div className='flex flex-row space-y-2 gap-2'>
-              {pages.map(page => (
-                <div key={page.pageNumber} className='flex items-center space-x-2'>
-                  <img src={images[page.pageNumber].data} alt={`Page ${page.pageNumber}`}/>
-                  <span>{page.pageNumber}</span>
+          <div className={"overflow-auto max-h-[500px] p-2"}>
+            {isUploading && <p>Chargement des pages...</p>}
+          {!isUploading && pages.length > 0 && images.length > 0 && (
+            <div className="flex flex-wrap gap-2 flex-row">
+              {pages.map((page) => (
+                <div
+                  key={pages.indexOf(page)}
+                  className="flex flex-col items-center border-2 border-amber-100 p-3 rounded-lg w-40"
+                >
+                  <img
+                    src={images[pages.indexOf(page)].data}
+                    alt={`Page ${pages.indexOf(page)}`}
+                    className=""
+                  />
+                  <span className="mt-2">{pages.indexOf(page)}</span>
                 </div>
               ))}
             </div>
           )}
+          </div>
           {!uploading ? (
             <Button
               onClick={(e) => {
