@@ -31,30 +31,6 @@ type ImageData = {
   thumbImageUrl?: string;
 };
 
-async function renderPdfToImages(file: File): Promise<ImageData[]> {
-  const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
-
-  const images: ImageData[] = [];
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 2 }); // ↑ changer le scale si nécessaire
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-
-    await page.render({ canvasContext: context, viewport }).promise;
-
-    const imgDataUrl = canvas.toDataURL('image/png');
-    images.push({ data: imgDataUrl, width: viewport.width, height: viewport.height });
-  }
-
-  return images;
-}
-
 async function uploadImageToSupabase(
   folder: string,
   imageDataUrl: string,
@@ -120,7 +96,7 @@ const StoragePage = () => {
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
-
+  const [progressRenderPDFToImages, setProgressRenderPDFToImages] = useState(0);
   useEffect(() => {
     void (async () => {
       try {
@@ -146,6 +122,31 @@ const StoragePage = () => {
       return null;
     })();
   }, []);
+
+  async function renderPdfToImages(file: File): Promise<ImageData[]> {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+
+    const _images: ImageData[] = [];
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2 }); // ↑ changer le scale si nécessaire
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d')!;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({ canvasContext: context, viewport }).promise;
+
+      const imgDataUrl = canvas.toDataURL('image/png');
+      _images.push({ data: imgDataUrl, width: viewport.width, height: viewport.height });
+      setProgressRenderPDFToImages(Math.floor((pageNum / pdf.numPages) * 100));
+    }
+    setProgressRenderPDFToImages(0);
+    return _images;
+  }
 
   if (!isConnected) {
     return (
@@ -176,7 +177,7 @@ const StoragePage = () => {
 
   const handleLoadPdf = () => {
     if (images.length === 0) {
-      alert('Veuillez sélectionner un fichier PDF.');
+      alert('Veuillez sélectionner un fichier PDF ou attendre la fin du chargement.');
       return;
     }
 
@@ -274,13 +275,18 @@ const StoragePage = () => {
           />
           <Input type='file' accept='application/pdf' onChange={handleFileChange}/>
           <div className={"overflow-auto max-h-[500px] p-2"}>
-            {isUploading && <p>Chargement des pages...</p>}
+            {isUploading &&
+              <div className={"flex flex-col items-center justify-center p-4 gap-2 border rounded-lg shadow-md bg-white dark:bg-gray-800"}>
+                <span className="text-sm">Conversion en images en cours...</span>
+                <progress value={progressRenderPDFToImages} max={100} className={"w-full h-2"}/>
+                <span className="text-sm">{progressRenderPDFToImages.toString() +"%"}</span>
+              </div>}
           {!isUploading && images.length > 0 && (
             <div className="flex flex-wrap gap-2 flex-row">
               {images.map((image, index) => (
                 <div
                   key={index}
-                  className="flex flex-col items-center p-3 rounded-lg w-40 relative"
+                  className="flex flex-col items-center p-3 rounded-lg w-40 relative justify-between"
                   draggable
                   onDragStart={(e) => dragStart(e, index)}
                   onDragEnter={(e) => dragEnter(e, index)}
