@@ -119,6 +119,7 @@ const StoragePage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -221,6 +222,7 @@ const StoragePage = () => {
 
   const dragEnter = (_ : React.DragEvent<HTMLDivElement>, position: number) => {
     dragOverItem.current = position;
+    setDropTargetIndex(position);
   };
 
 
@@ -232,6 +234,7 @@ const StoragePage = () => {
     copyImages.splice(dragOverItem.current, 0, draggedImage);
     dragItem.current = null;
     dragOverItem.current = null;
+    setDropTargetIndex(null);
     setImages(copyImages);
   };
 
@@ -277,11 +280,12 @@ const StoragePage = () => {
               {images.map((image, index) => (
                 <div
                   key={index}
-                  className="flex flex-col items-center border-2 border-amber-100 p-3 rounded-lg w-40 relative"
+                  className="flex flex-col items-center p-3 rounded-lg w-40 relative"
                   draggable
                   onDragStart={(e) => dragStart(e, index)}
                   onDragEnter={(e) => dragEnter(e, index)}
                   onDragEnd={drop}
+                  style={{ backgroundColor: (dropTargetIndex ?? -1) === index ? 'lightblue' : 'white' }}
                 >
                   <Button type="button" className=" text-red-500 bg-transparent top-0 right-0 absolute" onClick={() => handleDeletePage(index)}>X</Button>
                   <img
