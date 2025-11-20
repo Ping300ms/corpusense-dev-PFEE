@@ -28,8 +28,8 @@ const LoginPage = () => {
   };
 
   const handleOAuth = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'github' })
-  }
+    await supabase.auth.signInWithOAuth({ provider: 'github' });
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -38,7 +38,7 @@ const LoginPage = () => {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
-      }
+      },
     });
     if (error) {
       setErrorMsg(error.message);
@@ -49,11 +49,30 @@ const LoginPage = () => {
   const handleGitLabLogin = async () => {
     setLoading(true);
     setErrorMsg(null);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'gitlab',
       options: {
         redirectTo: `${window.location.origin}/`,
-      }
+        scopes: 'read_user', // optional but recommended
+      },
+    });
+
+    if (error) {
+      setErrorMsg(error.message);
+      setLoading(false);
+    }
+  };
+
+  const handleAzureLogin = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        scopes: 'openid profile email offline_access',
+        redirectTo: `${window.location.origin}/`,
+      },
     });
     if (error) {
       setErrorMsg(error.message);
@@ -67,6 +86,7 @@ const LoginPage = () => {
         <h1 className="text-2xl font-semibold text-center text-gray-800 dark:text-white mb-6">
           {t('page_title_login')}
         </h1>
+
         <form onSubmit={(e) => void handleLogin(e)} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
@@ -80,6 +100,7 @@ const LoginPage = () => {
               placeholder="email@example.com"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
               {t('form_label_password')}
@@ -97,6 +118,7 @@ const LoginPage = () => {
               {errorMsg}
             </div>
           )}
+
           <Button
             type="submit"
             className="w-full"
@@ -126,13 +148,23 @@ const LoginPage = () => {
               Connectez-vous via Google
             </Button>
 
+            <div className="space-y-3">
+              <Button
+                type="button"
+                onClick={() => void handleGitLabLogin()}
+                className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                disabled={loading}
+              >
+                Connectez-vous via GitLab
+              </Button>
+            </div>
             <Button
               type="button"
-              onClick={() => void handleGitLabLogin()}
-              className="w-full bg-orange-600 text-white hover:bg-orange-700"
+              onClick={() => void handleAzureLogin()}
+              className="w-full bg-blue-700 text-white hover:bg-blue-800"
               disabled={loading}
             >
-              Connectez-vous via GitLab
+              Connectez-vous via Azure
             </Button>
           </div>
 
