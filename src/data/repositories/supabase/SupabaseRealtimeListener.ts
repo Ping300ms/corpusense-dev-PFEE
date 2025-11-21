@@ -116,6 +116,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     await this.removeExistingChannel()
     console.info('Creating new realtime subscription...')
 
+    // FIXME subscribe before auth is set
     const user = (await this.supabaseClient.auth.getUser()).data.user;
     if (user === null) {
       console.log('User is not authenticated');
@@ -132,24 +133,21 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
 
     this.channel
       .on<TableType>('postgres_changes',
-        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName },
         (payload: RealtimePostgresInsertPayload<TableType>) => {
-        console.info('Insert received:', payload)
         void this.onInsert?.(payload);
       })
       .on<TableType>(
         'postgres_changes',
-        { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName },
         (payload: RealtimePostgresUpdatePayload<TableType>) => {
-          console.info('Update received:', payload)
           void this.onUpdate?.(payload);
         },
       )
       .on<TableType>(
         'postgres_changes',
-        { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
+        { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName },
         (payload: RealtimePostgresDeletePayload<TableType>) => {
-          console.info('Delete received:', payload)
           void this.onDelete?.(payload);
         },
       )

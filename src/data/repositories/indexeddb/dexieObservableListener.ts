@@ -1,5 +1,5 @@
 import {
-  ICreateChange,
+  ICreateChange, IDatabaseChange,
   IDeleteChange,
   IUpdateChange,
 } from 'dexie-observable/api';
@@ -7,6 +7,7 @@ import { SyncableObject, SyncableObjectNames, SyncableTables } from '@/data/mode
 import Dexie from 'dexie';
 
 export interface OnLocalChangeCallbacks {
+  onChange?: (changes: IDatabaseChange[]) => void |Promise<void>;
   onAdd?: (entity: SyncableObject, table: SyncableObjectNames) => void | Promise<void>;
   onUpdate?: (newObject: SyncableObject, oldObject: SyncableObject, table: SyncableObjectNames) => void | Promise<void>;
   onDelete?: (key: string, table: SyncableObjectNames) => void | Promise<void>;
@@ -19,6 +20,8 @@ export class DexieObservableListener {
     this.callbacks = callbacks;
 
     db.on('changes', (changes) => {
+      void callbacks.onChange?.(changes);
+
       for (const change of changes) {
         if (!(SyncableTables as string[]).includes(change.table)) continue;
 
