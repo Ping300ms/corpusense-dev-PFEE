@@ -75,9 +75,9 @@ export default function LoadTestPage() {
     new DexieObservableListener(
       db,
       {
-        onAdd: () => loadData(),
-        onUpdate: () => loadData(),
-        onDelete: () => loadData(),
+        onInsertItem: () => loadData(),
+        onUpdateItem: () => loadData(),
+        onDeleteItem: () => loadData(),
       });
   }, []);
 

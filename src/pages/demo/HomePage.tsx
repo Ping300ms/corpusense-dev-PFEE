@@ -28,9 +28,9 @@ export default function HomePage() {
     new DexieObservableListener(
       db,
       {
-      onAdd: () => loadData(),
-      onUpdate: () => loadData(),
-      onDelete: () => loadData(),
+      onInsertItem: () => loadData(),
+      onUpdateItem: () => loadData(),
+      onDeleteItem: () => loadData(),
     });
   }, []);
 

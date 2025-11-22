@@ -407,21 +407,14 @@ export class SyncManager {
 
   //endregion
 
-  public async destroy(): Promise<void> {
-    await this.realtimeListener?.removeExistingChannel();
-    this.authStateListener?.unsubscribe();
-    window.removeEventListener('online', () => void this.realtimeListener?.subscribe());
-    window.removeEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
-  }
-
   private initializeListeners() {
     // Dexie → Supabase
     new DexieObservableListener(
       this.dbToSync,
       {
-        onAdd: (newObject, table) => this.onLocalInsert(newObject, table),
-        onUpdate: (newObject, oldObject, table) => this.onLocalUpdate(newObject, oldObject, table),
-        onDelete: (key, table) => this.onLocalDelete(key, table),
+        onInsertItem: (newObject, table) => this.onLocalInsert(newObject, table),
+        onUpdateItem: (newObject, oldObject, table) => this.onLocalUpdate(newObject, oldObject, table),
+        onDeleteItem: (key, table) => this.onLocalDelete(key, table),
       });
 
     // Supabase → Dexie
@@ -684,5 +677,13 @@ export class SyncManager {
     if (this.userId == null)
       this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
     return this.userId;
+  }
+
+  public async destroy(): Promise<void> {
+    await this.realtimeListener?.removeExistingChannel();
+    this.authStateListener?.unsubscribe();
+    window.removeEventListener('online', () => void this.realtimeListener?.subscribe());
+    window.removeEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
+    SyncManager.instance = null;
   }
 }
