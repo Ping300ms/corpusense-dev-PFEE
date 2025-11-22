@@ -22,6 +22,7 @@ export class DexieObservableListener {
     db.on('changes', (changes) => {
       void callbacks.onChange?.(changes);
 
+      // TODO sort changes type, sort in each type by table, define more callbacks type and make callbacks take lists
       for (const change of changes) {
         if (!(SyncableTables as string[]).includes(change.table)) continue;
 

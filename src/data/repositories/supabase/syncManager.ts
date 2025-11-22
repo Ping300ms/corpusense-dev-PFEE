@@ -187,7 +187,8 @@ export class SyncManager {
     if (remote?.content != null) {
       newObj = merge(newObj, op.date, remote.content, new Date(remote.updated_at), type, op.old);
 
-      // check if CollectionContent update CollectionDetails.contentSize
+      // TODO if CollectionContent update CollectionDetails.contentSize
+      // TODO if Annotation and order change update all Annotations order
 
       // Save merge to local
       await this.addPendingOperation('UPDATE', 'DEXIE', type, newObj.id);
@@ -589,8 +590,6 @@ export class SyncManager {
     const { object_id, object_type, content } = backup;
     const table = this.dbToSync[object_type as keyof typeof this.dbToSync] as unknown as EntityTable<SyncableObject, 'id'>;
     const local = await table.get(object_id);
-
-    // TODO check annotation for prev and next to be valid
 
     if (local === undefined) { // local doesn't exist
       await this.addPendingOperation('CREATE', 'DEXIE', backup.object_type, backup.object_id);
