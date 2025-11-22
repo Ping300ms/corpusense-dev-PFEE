@@ -432,7 +432,8 @@ export class SyncManager {
     this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
       switch (_event) {
         case 'SIGNED_IN':
-          void this.onSignedIn();
+          // timeout prevent null return from auth.getUser()
+          setTimeout(() => void this.onSignedIn(), 1000);
           break;
         case 'SIGNED_OUT':
           void this.onSignedOut();
