@@ -67,11 +67,11 @@ export class DexieObservableListener {
       void this.callbacks.onUpdate?.(updates);
       void this.callbacks.onDelete?.(deletes);
 
-      if (this.callbacks.onInsertItem !== undefined)
+      if (this.callbacks.onInsertItem)
         void this.onInsertItem(inserts)
-      if (this.callbacks.onUpdate !== undefined)
+      if (this.callbacks.onUpdateItem)
         void this.onUpdateItem(updates);
-      if (this.callbacks.onDelete !== undefined)
+      if (this.callbacks.onDeleteItem)
         void this.onDeleteItem(deletes);
 
       if (this.callbacks.onAnnotationChanges !== undefined) {

@@ -8,6 +8,8 @@ import {
 import {
   SupabaseListenerProperties
 } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
+import Backup from '@/data/models/Backup.ts';
+import { BackupShares } from '@/data/models/BackupShares.ts';
 
 export enum ListenerState {
   DISCONNECTED = 'disconnected',
@@ -15,8 +17,7 @@ export enum ListenerState {
   SUBSCRIBED = 'subscribed',
 }
 
-/* eslint-disable-next-line */
-export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> {
+export class SupabaseRealtimeListener {
   private readonly backoffMultiplier: number;
   private readonly baseRetryDelay: number;
   private channel: null | ReturnType<typeof this.supabaseClient.channel> = null;
@@ -25,10 +26,11 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
   private isRetrying = false;
   private readonly maxRetries: number;
   private readonly maxRetryDelay: number;
-  private readonly onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
-  private readonly onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
-  private readonly onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  private readonly onInsert?: (payload: RealtimePostgresInsertPayload<Backup>) => void | Promise<void>;
+  private readonly onUpdate?: (payload: RealtimePostgresUpdatePayload<Backup>) => void | Promise<void>;
+  private readonly onDelete?: (payload: RealtimePostgresDeletePayload<Backup>) => void | Promise<void>;
   private readonly onSubscribed?: () => void | Promise<void>;
+  private readonly onShared?: (payload: RealtimePostgresInsertPayload<BackupShares>) => void | Promise<void>;
   private retryCount: number;
   private retryTimeout: ReturnType<typeof setTimeout> | undefined;
   private readonly supabaseClient: Pick<SupabaseClient, 'channel' | 'removeChannel' | 'auth'>;
@@ -46,10 +48,11 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
                 onUpdate,
                 onDelete,
                 onSubscribed,
+                onShared,
                 retryCount = 0,
                 supabaseClient,
                 tableName,
-              }: SupabaseListenerProperties<TableType>) {
+              }: SupabaseListenerProperties) {
     this.maxRetries = maxRetries
     this.baseRetryDelay = baseRetryDelay
     this.maxRetryDelay = maxRetryDelay
@@ -60,6 +63,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.onUpdate = onUpdate;
     this.onDelete = onDelete;
     this.onSubscribed = onSubscribed;
+    this.onShared = onShared;
     this.channelBaseName = channelBaseName
     this.supabaseClient = supabaseClient
     this.databaseSchemaName = databaseSchemaName
@@ -130,23 +134,30 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.channel = this.supabaseClient.channel(channelName)
 
     this.channel
-      .on<TableType>('postgres_changes',
+      .on<Backup>('postgres_changes',
         { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName },
-        (payload: RealtimePostgresInsertPayload<TableType>) => {
+        (payload: RealtimePostgresInsertPayload<Backup>) => {
         void this.onInsert?.(payload);
       })
-      .on<TableType>(
+      .on<Backup>(
         'postgres_changes',
         { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName },
-        (payload: RealtimePostgresUpdatePayload<TableType>) => {
+        (payload: RealtimePostgresUpdatePayload<Backup>) => {
           void this.onUpdate?.(payload);
         },
       )
-      .on<TableType>(
+      .on<Backup>(
         'postgres_changes',
         { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName },
-        (payload: RealtimePostgresDeletePayload<TableType>) => {
+        (payload: RealtimePostgresDeletePayload<Backup>) => {
           void this.onDelete?.(payload);
+        },
+      )
+      .on<BackupShares>(
+        'postgres_changes',
+        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName+'_shares' },
+        (payload: RealtimePostgresInsertPayload<BackupShares>) => {
+          void this.onShared?.(payload);
         },
       )
       .subscribe((status, error) => {

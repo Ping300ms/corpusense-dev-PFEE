@@ -17,8 +17,10 @@ import { SupabaseListenerProperties } from '@/data/repositories/supabase/Supabas
 import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
 import { v4 as uuid } from 'uuid';
 import { Annotation } from '@/data/models/Annotation.ts';
-import { CollectionContent } from '@/data/models/Collection.ts';
+import { CollectionContent, CollectionDetails } from '@/data/models/Collection.ts';
 import { merge } from '@/data/repositories/supabase/mergeUtils.ts';
+import { BackupShares } from '@/data/models/BackupShares.ts';
+import { DataModel } from '@/data/models/DataModel.ts';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
@@ -34,10 +36,19 @@ export class SyncManager {
   private userId: string | null = null;
   private isSyncing = false;
 
-  private realtimeListener: SupabaseRealtimeListener<Backup> | null = null;
+  private realtimeListener: SupabaseRealtimeListener | null = null;
   private authStateListener: Subscription | null = null;
 
   //endregion
+
+  public static getInstance(
+    client: typeof supabase = supabase,
+    dbToSync: typeof db = db,
+    operationDb: typeof dbSync = dbSync,
+  ): SyncManager {
+    if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
+    return SyncManager.instance;
+  }
 
   private constructor(client: SupabaseClient = supabase,
                       dbToSync: typeof db = db,
@@ -50,13 +61,43 @@ export class SyncManager {
     this.initializeListeners();
   }
 
-  public static getInstance(
-    client: typeof supabase = supabase,
-    dbToSync: typeof db = db,
-    operationDb: typeof dbSync = dbSync,
-  ): SyncManager {
-    if (!SyncManager.instance) SyncManager.instance = new SyncManager(client, dbToSync, operationDb);
-    return SyncManager.instance;
+  private initializeListeners() {
+    // Dexie → Supabase
+    new DexieObservableListener(
+      this.dbToSync,
+      {
+        onInsertItem: (newObject, table) => this.onLocalInsert(newObject, table),
+        onUpdateItem: (newObject, oldObject, table) => this.onLocalUpdate(newObject, oldObject, table),
+        onDeleteItem: (key, table) => this.onLocalDelete(key, table),
+      });
+
+    // Supabase → Dexie
+    this.realtimeListener = new SupabaseRealtimeListener(
+      {
+        tableName: this.backupTableName,
+        channelBaseName: this.backupTableName,
+        onInsert: this.onRemoteInsert,
+        onUpdate: this.onRemoteUpdate,
+        onDelete: this.onRemoteDelete,
+        onSubscribed: this.InitSync,
+        onShared: this.onShared,
+        supabaseClient: this.client,
+      } as SupabaseListenerProperties);
+
+    this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
+      switch (_event) {
+        case 'SIGNED_IN':
+          // timeout prevent null return from auth.getUser()
+          setTimeout(() => void this.onSignedIn(), 1000);
+          break;
+        case 'SIGNED_OUT':
+          void this.onSignedOut();
+          break;
+      }
+    }).data.subscription;
+
+    window.addEventListener('online', () => void this.realtimeListener?.subscribe());
+    window.addEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
   }
 
   //region Perf measurements
@@ -397,52 +438,46 @@ export class SyncManager {
     return null; // success
   }
 
+  public async onShared(payload: RealtimePostgresInsertPayload<BackupShares>) {
+    const { backup_id } = payload.new
+    const { data, error } = await this.client
+      .from(this.backupTableName)
+      .select('content, object_type')
+      .or(`id.eq.${backup_id},part_of.eq.${backup_id}`)
+      .is("deleted_at", null)
+    if (error) {
+      console.error(error);
+      return;
+    }
+    const annotations = [];
+    for (const entity of data) {
+      switch (entity.object_type) {
+        case 'annotations':
+          annotations.push(entity.content as Annotation);
+          break;
+        case 'collections':
+          void this.dbToSync.collections.put(entity.content as CollectionDetails);
+          break;
+        case 'collectionContents'  :
+          void this.dbToSync.collectionContents.put(entity.content as CollectionContent);
+          break;
+        case 'models':
+          void this.dbToSync.models.put(entity.content as DataModel);
+          break;
+        default:
+          break;
+      }
+    }
+
+    await this.dbToSync.annotations.bulkPut(annotations);
+  }
+
   public async InitSync() {
     if (this.isSyncing) return; // prevent parallel syncing
     this.isSyncing = true;
     await this.pullUpdates();
     await this.replayPendingOperations();
     this.isSyncing = false;
-  }
-
-  //endregion
-
-  private initializeListeners() {
-    // Dexie → Supabase
-    new DexieObservableListener(
-      this.dbToSync,
-      {
-        onInsertItem: (newObject, table) => this.onLocalInsert(newObject, table),
-        onUpdateItem: (newObject, oldObject, table) => this.onLocalUpdate(newObject, oldObject, table),
-        onDeleteItem: (key, table) => this.onLocalDelete(key, table),
-      });
-
-    // Supabase → Dexie
-    this.realtimeListener = new SupabaseRealtimeListener<Backup>(
-      {
-        tableName: this.backupTableName,
-        channelBaseName: this.backupTableName,
-        onInsert: (p) => this.onRemoteInsert(p),
-        onUpdate: (p) => this.onRemoteUpdate(p),
-        onDelete: (p) => this.onRemoteDelete(p),
-        onSubscribed: () => this.InitSync(),
-        supabaseClient: this.client,
-      } as SupabaseListenerProperties<Backup>);
-
-    this.authStateListener = this.client.auth.onAuthStateChange((_event) => {
-      switch (_event) {
-        case 'SIGNED_IN':
-          // timeout prevent null return from auth.getUser()
-          setTimeout(() => void this.onSignedIn(), 1000);
-          break;
-        case 'SIGNED_OUT':
-          void this.onSignedOut();
-          break;
-      }
-    }).data.subscription;
-
-    window.addEventListener('online', () => void this.realtimeListener?.subscribe());
-    window.addEventListener('offline', () => void this.realtimeListener?.removeExistingChannel());
   }
 
   //endregion

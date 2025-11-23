@@ -1,12 +1,13 @@
-/* eslint-disable */
 import {
   RealtimePostgresDeletePayload,
   RealtimePostgresInsertPayload,
   RealtimePostgresUpdatePayload,
   SupabaseClient,
 } from '@supabase/supabase-js';
+import Backup from '@/data/models/Backup.ts';
+import { BackupShares } from '@/data/models/BackupShares.ts';
 
-export interface SupabaseListenerProperties<TableType extends { [key: string]: any }> {
+export interface SupabaseListenerProperties {
   /**
    * The multiplier of the exponential backoff between reconnection attempts
    * Default is `1.5`
@@ -41,19 +42,21 @@ export interface SupabaseListenerProperties<TableType extends { [key: string]: a
   /**
    * INSERT event handler. Called for each payload
    */
-  onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
+  onInsert?: (payload: RealtimePostgresInsertPayload<Backup>) => void | Promise<void>;
   /**
    * UPDATE event handler. Called for each payload
    */
-  onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
+  onUpdate?: (payload: RealtimePostgresUpdatePayload<Backup>) => void | Promise<void>;
   /**
    * DELETE event handler. Called for each payload
    */
-  onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  onDelete?: (payload: RealtimePostgresDeletePayload<Backup>) => void | Promise<void>;
   /**
    * SUBSCRIBED event handler. Called on channel subscribed
    */
   onSubscribed?: () => void | Promise<void>;
+
+  onShared?: (payload: RealtimePostgresInsertPayload<BackupShares>) => void | Promise<void>;
   /**
    * The number of reconnection attempts made since the last successful subscription
    */
