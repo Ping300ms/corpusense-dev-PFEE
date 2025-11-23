@@ -76,11 +76,11 @@ export class SyncManager {
       {
         tableName: this.backupTableName,
         channelBaseName: this.backupTableName,
-        onInsert: this.onRemoteInsert,
-        onUpdate: this.onRemoteUpdate,
-        onDelete: this.onRemoteDelete,
-        onSubscribed: this.InitSync,
-        onShared: this.onShared,
+        onInsert: (p) => {void this.onRemoteInsert(p)},
+        onUpdate: (p) => {void this.onRemoteUpdate(p)},
+        onDelete: (p) => {void this.onRemoteDelete(p)},
+        onSubscribed: () => {void this.InitSync()},
+        onShared: (p) => {void this.onShared(p)},
         supabaseClient: this.client,
       } as SupabaseListenerProperties);
 
