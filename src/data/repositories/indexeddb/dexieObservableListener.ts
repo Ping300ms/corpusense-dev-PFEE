@@ -103,7 +103,14 @@ export class DexieObservableListener {
         (a.table === "collections" ? 0 : 1) - (b.table === "collections" ? 0 : 1)
     )
     for (const change of changes) {
-      await this.callbacks.onInsertItem!(
+      if (change.table === "collections") {
+        await this.callbacks.onInsertItem!(
+          change.obj as SyncableObject,
+          change.table as SyncableObjectNames
+        );
+        continue;
+      }
+      void this.callbacks.onInsertItem!(
         change.obj as SyncableObject,
         change.table as SyncableObjectNames
       );
@@ -116,7 +123,15 @@ export class DexieObservableListener {
         (a.table === "collections" ? 0 : 1) - (b.table === "collections" ? 0 : 1)
     )
     for (const change of changes) {
-      await this.callbacks.onUpdateItem!(
+      if (change.table === "collections") {
+        await this.callbacks.onUpdateItem!(
+          change.obj as SyncableObject,
+          change.oldObj as SyncableObject,
+          change.table as SyncableObjectNames
+        );
+        continue;
+      }
+      void this.callbacks.onUpdateItem!(
         change.obj as SyncableObject,
         change.oldObj as SyncableObject,
         change.table as SyncableObjectNames,

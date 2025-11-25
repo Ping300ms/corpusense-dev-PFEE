@@ -21,6 +21,7 @@ import { CollectionContent, CollectionDetails } from '@/data/models/Collection.t
 import { merge } from '@/data/repositories/supabase/mergeUtils.ts';
 import { BackupShares } from '@/data/models/BackupShares.ts';
 import { DataModel } from '@/data/models/DataModel.ts';
+import { isEqual } from 'lodash';
 
 export class SyncManager {
   private static instance: SyncManager | null = null;
@@ -147,13 +148,13 @@ export class SyncManager {
     return { data, error: null };
   }
 
-  public async create(obj: SyncableObject, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<{
-    data: null,
-    error: PostgrestError
-  } | { data: SyncableObject, error: null } | null> {
+  public async create(obj: SyncableObject, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<SyncableObject | null> {
     if (op == undefined) op = await this.addPendingOperation('CREATE', 'SUPABASE', type, obj.id);
     const userId = await this.getUser();
-    if (userId == null) return null;
+    if (userId == null) {
+      console.warn("user not login")
+      return null;
+    }
     let part_of: string | null = null;
     if (type === 'annotations' || type === 'collectionContents') {
       const { data, error } = await this.read(
@@ -161,7 +162,10 @@ export class SyncManager {
         , 'collections',
       );
 
-      if (error !== null) return { data: null, error };
+      if (error !== null) {
+        this.remoteRequestErrorHandler(obj.id, 'GET', error);
+        return null;
+      }
       if (data == null || data.id == undefined) {
         console.error(`collection backup of ${type} ${obj.id} not found`, data, obj);
         return null;
@@ -169,7 +173,7 @@ export class SyncManager {
       part_of = data.id;
     }
 
-    const { error } = await this.client.from(this.backupTableName).upsert<Backup>({
+    const { error } = await this.client.from(this.backupTableName).insert<Backup>({
       owner_id: userId,
       object_id: obj.id,
       object_type: type,
@@ -180,14 +184,13 @@ export class SyncManager {
       part_of,
     } as Backup);
 
-    if (error) return { data: null, error };
-    return { data: obj, error: null };
+    if (error?.code === '23505') await this.removePendingOperation(op.id);
+    else if (error !== null) this.remoteRequestErrorHandler(op.object_id, op.type, error);
+
+    return error ? null : obj;
   }
 
-  public async delete(id: string, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<{
-    data: null,
-    error: PostgrestError
-  } | { data: string, error: null } | null> {
+  public async delete(id: string, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<string | null> {
     if (op == undefined) op = await this.addPendingOperation('DELETE', 'SUPABASE', type, id);
 
     const userId = await this.getUser();
@@ -201,16 +204,13 @@ export class SyncManager {
       .select()
       .maybeSingle<Backup>();
 
-    if (error)
-      return { data: null, error };
-    return { data: id, error: null };
+    if (error !== null) this.remoteRequestErrorHandler(id, 'DELETE', error);
+
+    return error ? null : id;
   }
 
-  public async push(newObj: SyncableObject, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<{
-    data: null,
-    error: PostgrestError
-  } | { data: SyncableObject, error: null } | null> {
-    if (op == undefined) op = await this.addPendingOperation('UPDATE', 'SUPABASE', type, newObj.id);
+  public async push(obj: SyncableObject, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<SyncableObject | null> {
+    if (op == undefined) op = await this.addPendingOperation('UPDATE', 'SUPABASE', type, obj.id);
     
     const userId = await this.getUser();
     if (userId == null) return null;
@@ -218,47 +218,56 @@ export class SyncManager {
     const { data: remote, error: selectError } = await this.client
       .from(this.backupTableName)
       .select('content, updated_at, deleted_at')
-      .eq('object_id', newObj.id)
+      .eq('object_id', obj.id)
       .eq('object_type', type)
       .select()
       .maybeSingle<Backup>();
 
-    if (selectError) return { data: null, error: selectError };
-
-    if (remote?.content != null) {
-      newObj = merge(newObj, op.date, remote.content, new Date(remote.updated_at), type, op.old);
-
-      // TODO if CollectionContent update CollectionDetails.contentSize
-      // TODO if Annotation and order change update all Annotations order
-
-      // Save merge to local
-      await this.addPendingOperation('UPDATE', 'DEXIE', type, newObj.id);
-      const table = this.dbToSync[type] as EntityTable<SyncableObject, 'id'>;
-      await table.update(newObj.id, newObj);
+    if (selectError !== null) {
+      this.remoteRequestErrorHandler(obj.id, 'GET', selectError);
+      return null
     }
 
-    const { error: upsertError } = await this.client.from(this.backupTableName).upsert<Backup>(
+    if (remote?.content == null) { // insert
+      await this.removePendingOperation(op.id);
+      return this.create(obj, type);
+    }
+
+    const merged = merge(obj, op.date, remote.content, new Date(remote.updated_at), type, op.old);
+
+    // TODO if CollectionContent update CollectionDetails.contentSize
+    // TODO if Annotation and order change update all Annotations order
+
+    // Save merge to local
+    if (!isEqual(obj, merged)) {
+      await this.addPendingOperation('UPDATE', 'DEXIE', type, merged.id);
+      const table = this.dbToSync[type] as EntityTable<SyncableObject, 'id'>;
+      await table.update(merged.id, merged);
+    }
+
+    const { error: updateError } = await this.client.from(this.backupTableName).update<Backup>(
       {
-        owner_id: this.userId,
-        object_id: newObj.id,
-        object_type: type,
-        content: newObj,
+        owner_id: remote.owner_id,
+        object_id: remote.object_id,
+        object_type: remote.object_type,
+        content: merged,
         updated_at: op.date.toISOString(),
         change_id: op.id,
-        deleted_at: remote?.deleted_at ?? null,
-      } as Backup,
-      { onConflict: 'owner_id,object_type,object_id' },
-    );
+        deleted_at: remote.deleted_at,
+        part_of: remote.part_of,
+      },
+    ).eq('id', remote.id).maybeSingle();
+    if (updateError !== null) this.remoteRequestErrorHandler(merged.id, 'UPDATE', updateError);
 
-    if (upsertError) return { data: null, error: upsertError };
-    return { data: newObj, error: null };
+    return updateError ? null : merged;
   }
 
   //region Synchronization
   public async replayPendingOperations(): Promise<void> {
-    const pending = await this.operationDb.pendingOperations.orderBy('date')
+    const pending = (await this.operationDb.pendingOperations.orderBy('date')
       .filter((op) => op.location === 'SUPABASE',
-      ).toArray();
+      ).toArray()).sort((a, b) =>
+      (a.table === "collections" ? 0 : 1) - (b.table === "collections" ? 0 : 1));
 
     console.log(`[SyncManager] Replaying ${pending.length} pending operations`);
     for (const op of pending) {
@@ -272,11 +281,9 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.create(obj, op.table, op);
-          if (res?.error != undefined) {
-            if (res.error.code === '23505') await this.removePendingOperation(op.id);
-            else this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
-          }
+          if (op.table === "collections")
+            await this.create(obj, op.table, op)
+          else void this.create(obj, op.table, op);
           break;
         }
         case 'UPDATE': {
@@ -286,8 +293,7 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.push(obj, op.table, op);
-          if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
+          void this.push(obj, op.table, op);
           break;
         }
         case 'DELETE': {
@@ -296,8 +302,7 @@ export class SyncManager {
             await this.removePendingOperation(op.id);
             break;
           }
-          const res = await this.delete(op.object_id, op.table, op);
-          if (res?.error) this.remoteRequestErrorHandler(op.object_id, op.type, res.error);
+          void this.delete(op.object_id, op.table, op);
           break;
         }
       }
@@ -439,6 +444,7 @@ export class SyncManager {
   }
 
   public async onShared(payload: RealtimePostgresInsertPayload<BackupShares>) {
+    console.log("A collection has been shared with you !");
     const { backup_id } = payload.new
     const { data, error } = await this.client
       .from(this.backupTableName)
@@ -544,8 +550,7 @@ export class SyncManager {
       return;
     }
     if (this.userId !== null) console.log(`[Dexie] Added ${table} → pushing to Supabase`);
-    const result = await this.create(entity, table);
-    if (result?.error) this.remoteRequestErrorHandler(entity.id, 'CREATE', result?.error);
+    void this.create(entity, table);
   }
 
   //endregion
@@ -553,13 +558,12 @@ export class SyncManager {
   private async onLocalUpdate(newObject: SyncableObject, oldObject: SyncableObject, table: SyncableObjectNames) {
     const operation = await this.getPendingOperation('UPDATE', 'DEXIE', table, newObject.id);
     if (operation !== undefined) {
-      await this.removePendingOperation(operation.id);
+      void this.removePendingOperation(operation.id);
       return;
     }
     if (this.userId !== null) console.log(`[Dexie] Updated ${table} → pushing to Supabase`, newObject);
     const op = await this.addPendingOperation('UPDATE', 'SUPABASE', table, newObject.id, oldObject);
-    const result = await this.push(newObject, table, op);
-    if (result?.error) this.remoteRequestErrorHandler(newObject.id, 'UPDATE', result?.error);
+    void this.push(newObject, table, op);
   }
 
   private async onLocalDelete(key: string, table: SyncableObjectNames) {
@@ -569,8 +573,7 @@ export class SyncManager {
       return;
     }
     if (this.userId !== null) console.log(`[Dexie] Deleted ${table} → deleting in Supabase`);
-    const result = await this.delete(key, table);
-    if (result?.error) this.remoteRequestErrorHandler(key, 'DELETE', result?.error);
+    void this.delete(key, table);
   }
 
   //region Remote handler

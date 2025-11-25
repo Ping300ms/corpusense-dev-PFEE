@@ -109,7 +109,7 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
       }
     })) {
       appDispatch(fetchAnnotationsRequest({ canvasId: canvasToDisplay.id, collectionId }));
-      appDispatch(loadEntitiesRequest({ canvasId: canvasToDisplay.id, collectionId }));
+      //appDispatch(loadEntitiesRequest({ canvasId: canvasToDisplay.id, collectionId }));
     }
   }
 
