@@ -165,6 +165,7 @@ export const collectionsSlice = createSlice({
       _state,
       _action: PayloadAction<string>, // collectionId
     ) => {},
+    fetchAllCollectionsRequest: () => {},
   },
 });
 
@@ -189,5 +190,6 @@ export const {
   importCollectionsRequest,
   updateOcrStatus,
   toggleCollectionOfflineRequest,
+  fetchAllCollectionsRequest,
 } = collectionsSlice.actions;
 export default collectionsSlice.reducer;

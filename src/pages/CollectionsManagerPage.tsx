@@ -15,12 +15,14 @@ import { CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import useDialog from '@/hooks/ui/useDialog';
 import useAppNavigation from '@/hooks/useAppNavigation';
-import { removeCollectionRequest } from '@/state/reducers/collections';
+import { fetchAllCollectionsRequest, removeCollectionRequest } from '@/state/reducers/collections';
 import { selectCollections } from '@/state/selectors/collections';
 import { selectTagsByIds } from '@/state/selectors/tags';
 import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
+import { db } from '@/data/repositories/indexeddb/db.ts';
 
 const CollectionTableRow = ({
   collection,
@@ -133,11 +135,18 @@ const CollectionTableRow = ({
 
 const CollectionsManagerPage = () => {
   const { t } = useTranslation();
+  const dispatch = useAppDispatch();
   const collections: CollectionDetails[] = useAppSelector(selectCollections);
   const { openImportCollectionDialog, openNewCollectionDialog, openExportCollectionDialog } =
     useDialog();
 
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
+
+  new DexieObservableListener(db, {
+    onCollectionDetailsChanges: () => {
+      dispatch(fetchAllCollectionsRequest());
+    }
+  })
 
   const addOrRemoveCollection = (id: string, isAdd: boolean) => {
     if (isAdd) {

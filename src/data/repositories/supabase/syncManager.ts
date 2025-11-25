@@ -475,7 +475,7 @@ export class SyncManager {
       }
     }
 
-    await this.dbToSync.annotations.bulkPut(annotations);
+    void this.dbToSync.annotations.bulkPut(annotations);
   }
 
   public async InitSync() {

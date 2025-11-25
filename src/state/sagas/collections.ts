@@ -31,7 +31,7 @@ import {
   createCollectionSuccess,
   createCollectionWithSelectionRequest,
   ExportCollectionOptions,
-  exportCollectionsRequest,
+  exportCollectionsRequest, fetchAllCollectionsRequest,
   ImportCollectionPayload,
   importCollectionRequest,
   importCollectionsRequest,
@@ -580,6 +580,7 @@ export default function* collectionsSaga() {
   yield takeEvery(loadCollectionRequest, handleLoadCollection);
   yield takeEvery(toggleCollectionOfflineRequest, handleToggleCollectionOffline);
   yield takeEvery(exportCollectionsRequest, handleExportMultipleCollectionsRequest);
+  yield takeEvery(fetchAllCollectionsRequest, fetchAllCollections);
 }
 
 export {
