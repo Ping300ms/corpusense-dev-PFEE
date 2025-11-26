@@ -19,7 +19,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-//const CANTALOUPE_URL = import.meta.env.VITE_CANTALOUPE_URL as string;
+const CANTALOUPE_URL = import.meta.env.VITE_CANTALOUPE_URL as string;
 
 // const reduceBlob = imageBlobReduce();
 
@@ -40,7 +40,7 @@ async function uploadImageToSupabase(
   const imageFile = await fetch(imageDataUrl).then((res) => res.blob());
   const { data: fullImageData, error: fullImageError } = await supabase.storage
     .from('images')
-    .upload(`${userId}/${folder}_${fileName}.png`, imageFile, {
+    .upload(`${userId}/${folder}/${folder}_${fileName}.png`, imageFile, {
       cacheControl: '3600',
       upsert: false,
     });
@@ -190,10 +190,10 @@ const StoragePage = () => {
       for (let i = 0; i < images.length; i++) {
         const filename = `${i + 1}`;
         void uploadImageToSupabase(documentName, images[i].data, filename, userId ?? '');
-        /*_images[i].fullImageUrl =
-          `${CANTALOUPE_URL}${documentName}_${filename}.png/full/max/0/default.png`;
-        _images[i].thumbImageUrl =
-          `${CANTALOUPE_URL}${documentName}_${filename}.png/full/,120/0/default.png`;*/
+        images[i].fullImageUrl =
+          `${CANTALOUPE_URL}${userId}%2F${documentName}%2F${documentName}_${filename}.png/full/max/0/default.png`;
+        images[i].thumbImageUrl =
+          `${CANTALOUPE_URL}${userId}%2F${documentName}%2F${documentName}_${filename}.png/full/,120/0/default.png`;
       }
       const newManifest = generateManifest(
         documentName.trim(),
