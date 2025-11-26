@@ -1,6 +1,7 @@
 import { Annotation, AnnotationDTO, ElementType } from '@/data/models/Annotation';
 import { CanvasScope, Scope } from '@/data/models/Scope';
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { isEqual } from 'lodash';
 
 export enum DuplicateDistribution {
   ALL_PAGES = 'all_pages',
@@ -94,6 +95,24 @@ const annotationsSlice = createSlice({
         ),
       ];
     },
+    updateAnnotationsSuccess(state, action: PayloadAction<Annotation[]>) {
+      let changes = false;
+      for (const annotation of action.payload) {
+        const item = state.values.find((a) => a.id === annotation.id);
+        if (item && !isEqual(item, annotation)) {
+          item.order = annotation.order;
+          item.target = annotation.target;
+          item.bodies = annotation.bodies;
+          changes = true;
+        }
+      }
+      if (changes) state.values = [...state.values];
+    },
+    deleteAnnotationsSuccess(state, action: PayloadAction<string[]>) {
+      state.values = [
+        ...state.values.filter(item => !action.payload.includes(item.id))
+      ];
+    },
     updateAnnotationOrderRequest(
       _state,
       _action: PayloadAction<{ annotationId: string; value: number }>,
@@ -114,6 +133,8 @@ export const {
   removeAnnotationsInsideRequest,
   fetchAnnotationsRequest,
   fetchAnnotationsSuccess,
+  updateAnnotationsSuccess,
+  deleteAnnotationsSuccess,
   updateAnnotationOrderRequest,
   duplicateRegionsRequest,
   recomputeRegionsRequest,

@@ -13,7 +13,12 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collection, CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
-import { fetchAnnotationsRequest } from '@/state/reducers/annotations';
+import {
+  addAnnotationsSuccess,
+  deleteAnnotationsSuccess,
+  fetchAnnotationsRequest,
+  updateAnnotationsSuccess,
+} from '@/state/reducers/annotations';
 import { loadCollectionRequest } from '@/state/reducers/collections';
 import { loadEntitiesRequest } from '@/state/reducers/namedEntities';
 import { selectCurrentCollection } from '@/state/selectors/collections';
@@ -96,20 +101,14 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
   }, [canvasToDisplay]);
 
   const onAnnotationChanges = (changes: IDatabaseChange[]) => {
-    if (canvasToDisplay !== undefined && changes.some((change) => {
-      switch (change.type as number) {
-        case 1:
-          return ((change as ICreateChange).obj as Annotation).collectionId === collectionId;
-        case 2:
-          return ((change as IUpdateChange).obj as Annotation).collectionId === collectionId;
-        case 3:
-          return ((change as IDeleteChange).oldObj as Annotation).collectionId === collectionId;
-        default:
-          return false;
-      }
-    })) {
-      appDispatch(fetchAnnotationsRequest({ canvasId: canvasToDisplay.id, collectionId }));
-    }
+    const inserted = changes.filter(change => change.type as number === 1) as ICreateChange[];
+    appDispatch(addAnnotationsSuccess(inserted.map(change => change.obj as Annotation)));
+
+    const updated = changes.filter(change => change.type as number === 2) as IUpdateChange[];
+    appDispatch(updateAnnotationsSuccess(updated.map(change => change.obj as Annotation)));
+
+    const deleted = changes.filter(change => change.type as number === 3) as IDeleteChange[];
+    appDispatch(deleteAnnotationsSuccess(deleted.map(change => change.key as string)));
   }
 
   const onCollectionDetailsChanges = (changes: IDatabaseChange[]) => {
