@@ -3,7 +3,7 @@ import {
   RealtimePostgresDeletePayload,
   RealtimePostgresInsertPayload,
   RealtimePostgresUpdatePayload,
-  SupabaseClient,
+  SupabaseClient, User,
 } from '@supabase/supabase-js';
 import {
   SupabaseListenerProperties
@@ -120,9 +120,15 @@ export class SupabaseRealtimeListener {
     await this.removeExistingChannel()
     console.info('Creating new realtime subscription...')
 
-    const user = (await this.supabaseClient.auth.getUser()).data.user;
+    let i = 0;
+    let user: User | null = null;
+    while (user == null && i < 3) {
+      user = (await this.supabaseClient.auth.getUser()).data.user;
+      i++;
+    }
+
     if (user === null) {
-      console.error("User not set");
+      console.warn("User not set");
       return;
     }
 

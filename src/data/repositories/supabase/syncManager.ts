@@ -151,10 +151,8 @@ export class SyncManager {
   public async create(obj: SyncableObject, type: SyncableObjectNames, op?: SyncPendingOperations): Promise<SyncableObject | null> {
     if (op == undefined) op = await this.addPendingOperation('CREATE', 'SUPABASE', type, obj.id);
     const userId = await this.getUser();
-    if (userId == null) {
-      console.warn("user not login")
-      return null;
-    }
+    if (userId == null) return null;
+
     let part_of: string | null = null;
     if (type === 'annotations' || type === 'collectionContents') {
       const { data, error } = await this.read(

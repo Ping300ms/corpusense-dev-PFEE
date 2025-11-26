@@ -43,7 +43,9 @@ export const collectionsSlice = createSlice({
   reducers: {
     createCollectionRequest: (_state, _action: PayloadAction<string>) => {},
     createCollectionSuccess: (state, action: PayloadAction<CollectionDetails>) => {
-      state.values.push(action.payload);
+      if (!state.values.find((collection) => collection.id === action.payload.id)) {
+        state.values.push(action.payload);
+      }
       if (
         action.payload.id !== undefined &&
         state.openedCollections.find((id) => id === action.payload.id) != null
