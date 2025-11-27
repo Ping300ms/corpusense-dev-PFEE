@@ -243,6 +243,7 @@ const LayoutSideBar = ({ setSelectedWorkerId }: { setSelectedWorkerId: (id: stri
           <SidebarGroup>
             <SidebarMenu>
               <SidebarMenuItem>
+                {/* modal={false} : fix a bug with the Dialog+ContextMenu : https://github.com/radix-ui/primitives/issues/1836 */}
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <SidebarMenuButton>
