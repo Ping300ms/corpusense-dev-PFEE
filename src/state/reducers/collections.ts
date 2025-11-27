@@ -1,5 +1,5 @@
 import { Annotation, ElementType, getAnnotationType } from '@/data/models/Annotation';
-import { Collection, CollectionDetails } from '@/data/models/Collection';
+import { Collection, CollectionContent, CollectionDetails } from '@/data/models/Collection';
 import { Canvas } from '@iiif/presentation-3';
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
@@ -102,6 +102,10 @@ export const collectionsSlice = createSlice({
     setCollections: (state, action: PayloadAction<CollectionDetails[]>) => {
       state.values = action.payload;
     },
+    updateCollectionContent: (state, action: PayloadAction<CollectionContent>) => {
+      if (state.currentCollection && action.payload.id === state.currentCollection.id)
+        state.currentCollection.content = action.payload.content;
+    },
     addSelectionToCollectionRequest: (
       _state,
       _action: PayloadAction<{
@@ -181,6 +185,7 @@ export const {
   loadCollectionRequest,
   loadCollectionSuccess,
   setCollections,
+  updateCollectionContent,
   addSelectionToCollectionRequest,
   addSelectionToCollectionSuccess,
   createCollectionWithSelectionRequest,

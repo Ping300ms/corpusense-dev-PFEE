@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/accordion';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Collection, CollectionDetails } from '@/data/models/Collection';
+import { Collection, CollectionContent, CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import {
   addAnnotationsSuccess,
@@ -19,7 +19,7 @@ import {
   fetchAnnotationsRequest,
   updateAnnotationsSuccess,
 } from '@/state/reducers/annotations';
-import { loadCollectionRequest } from '@/state/reducers/collections';
+import { loadCollectionRequest, updateCollectionContent, updateCollectionSuccess } from '@/state/reducers/collections';
 import { loadEntitiesRequest } from '@/state/reducers/namedEntities';
 import { selectCurrentCollection } from '@/state/selectors/collections';
 import { Canvas } from '@iiif/presentation-3';
@@ -109,22 +109,29 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
 
     const deleted = changes.filter(change => change.type as number === 3) as IDeleteChange[];
     appDispatch(deleteAnnotationsSuccess(deleted.map(change => change.key as string)));
-  }
+  };
+
+  const onCollectionContentChanges = (changes: IDatabaseChange[]) => {
+    const updated = changes.find(change =>
+      change.type as number === 2 && change.key as string === collectionId
+    );
+    if (updated)
+      appDispatch(updateCollectionContent((updated as IUpdateChange).obj as CollectionContent));
+  };
 
   const onCollectionDetailsChanges = (changes: IDatabaseChange[]) => {
-    if (canvasToDisplay !== undefined && changes.some((change) => {
-      if (change.type as number === 2)
-        return ((change as IUpdateChange).obj as CollectionDetails).id === collectionId;
-      return false
-    })) {
-      appDispatch(loadCollectionRequest(collectionId));
-    }
+    const updated = changes.find(change =>
+      change.type as number === 2 && change.key as string === collectionId
+    );
+    if (updated)
+      appDispatch(updateCollectionSuccess((updated as IUpdateChange).obj as CollectionDetails));
   };
 
   new DexieObservableListener(db, {
     onAnnotationChanges,
     onCollectionDetailsChanges,
-  })
+    onCollectionContentChanges,
+  });
 
   const handleOnResize = (size: { height: number; width: number }) => {
     if (size.width < 200) {
