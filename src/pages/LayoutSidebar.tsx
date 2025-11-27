@@ -33,6 +33,8 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { getUserDisplayInfo } from '../utils/userProfile';
+import { useState } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -226,6 +228,9 @@ const LayoutSideBar = ({ setSelectedWorkerId }: { setSelectedWorkerId: (id: stri
     appDispatch(logoutRequest());
   };
 
+  const { name, email, avatarUrl } = getUserDisplayInfo(user);
+  const [imageError, setImageError] = useState(false);
+
   return (
     <Sidebar>
       <SidebarContent>
@@ -238,24 +243,62 @@ const LayoutSideBar = ({ setSelectedWorkerId }: { setSelectedWorkerId: (id: stri
           <SidebarGroup>
             <SidebarMenu>
               <SidebarMenuItem>
-                {/* modal={false} : fix a bug with the Dialog+ContextMenu : https://github.com/radix-ui/primitives/issues/1836 */}
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <SidebarMenuButton>
                       <div className='flex items-center gap-2'>
-                        <User2 />
-                        {user ? user.email : t('info_not_connected')}
+                        {/* Display avatar or fallback icon */}
+                        {avatarUrl !== null && !imageError ? (
+                          <img
+                            src={avatarUrl}
+                            alt={name ?? 'User'}
+                            className='w-6 h-6 rounded-full object-cover flex-shrink-0'
+                            onError={() => setImageError(true)}
+                          />
+                        ) : (
+                          <User2 className='flex-shrink-0' />
+                        )}
+
+                        {/* Display name or email or "not connected" */}
+                        <span className='truncate'>
+                  {user !== null ? (name ?? email) : t('info_not_connected')}
+                </span>
+
                         <ChevronDown className='ml-auto' />
                       </div>
                     </SidebarMenuButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side='right'>
-                    {user ? (
-                      <DropdownMenuItem onClick={() => handleLogout()}>
-                        Se déconnecter
-                      </DropdownMenuItem>
+                    {user !== null ? (
+                      <>
+                        {/*Show full user info in dropdown header */}
+                        <div className='px-2 py-1.5 text-sm border-b'>
+                          <div className='flex items-center gap-2 mb-1'>
+                            {avatarUrl !== null ? (
+                              <img
+                                src={avatarUrl}
+                                alt={name ?? 'User'}
+                                className='w-8 h-8 rounded-full object-cover'
+                              />
+                            ) : (
+                              <div className='w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center'>
+                                <User2 size={16} />
+                              </div>
+                            )}
+                            <div className='flex-1 min-w-0'>
+                              <p className='font-medium truncate'>{name}</p>
+                              <p className='text-xs text-muted-foreground truncate'>{email}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <DropdownMenuItem onClick={() => handleLogout()}>
+                          Se déconnecter
+                        </DropdownMenuItem>
+                      </>
                     ) : (
-                      <DropdownMenuItem onClick={openLoginDialog}>Se connecter</DropdownMenuItem>
+                      <DropdownMenuItem onClick={openLoginDialog}>
+                        Se connecter
+                      </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
