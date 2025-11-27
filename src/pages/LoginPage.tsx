@@ -38,6 +38,7 @@ const LoginPage = () => {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
+        scopes: 'profile email'
       },
     });
     if (error) {
@@ -54,7 +55,7 @@ const LoginPage = () => {
       provider: 'gitlab',
       options: {
         redirectTo: `${window.location.origin}/`,
-        scopes: 'read_user', // optional but recommended
+        scopes: 'read:user user:email',
       },
     });
 
@@ -70,7 +71,7 @@ const LoginPage = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        scopes: 'openid profile email offline_access',
+        scopes: 'openid profile email',
         redirectTo: `${window.location.origin}/`,
       },
     });
