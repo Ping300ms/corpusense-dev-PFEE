@@ -4,11 +4,12 @@ import { DataModel } from '@/data/models/DataModel.ts';
 
 export type SyncableObject = Annotation | CollectionContent | CollectionDetails | DataModel;
 
-export type SyncableObjectNames = "annotations" | "collections" | "collectionContents" | "models";
+export type SyncableObjectName = "annotations" | "collections" | "collectionContents" | "models";
 
-export const SyncableTables : SyncableObjectNames[] = [
+// list is ordered from the highest priority to the least priority of push
+export const SyncableTables : SyncableObjectName[] = [
   "collections",
+  "models",
   "collectionContents",
-  "annotations",
-  "models"
+  "annotations"
 ];

@@ -4,33 +4,25 @@ import {
   IDeleteChange,
   IUpdateChange,
 } from 'dexie-observable/api';
-import { SyncableObject, SyncableObjectNames, SyncableTables } from '@/data/models/Syncable.ts';
+import { SyncableObjectName, SyncableTables } from '@/data/models/Syncable.ts';
 import Dexie from 'dexie';
 
 export interface OnLocalChangeCallbacks {
   onChange?: (changes: IDatabaseChange[]) => void | Promise<void>;
 
-  // Global grouped callbacks
+  // Grouped callbacks by table
   onAnnotationChanges?: (changes: IDatabaseChange[]) => void | Promise<void>;
   onCollectionDetailsChanges?: (changes: IDatabaseChange[]) => void | Promise<void>;
   onCollectionContentChanges?: (changes: IDatabaseChange[]) => void | Promise<void>;
   onDataModelChanges?: (changes: IDatabaseChange[]) => void | Promise<void>;
 
   // Grouped callbacks by type
-  onInsert?: (changes: ICreateChange[]) => void | Promise<void>;
-  onUpdate?: (changes: IUpdateChange[]) => void | Promise<void>;
-  onDelete?: (changes: IDeleteChange[]) => void | Promise<void>;
-
-  // Item-by-item callbacks
-  onInsertItem?: (entity: SyncableObject, table: SyncableObjectNames) => void | Promise<void>;
-  onUpdateItem?: (
-    newObject: SyncableObject,
-    oldObject: SyncableObject,
-    table: SyncableObjectNames
-  ) => void | Promise<void>;
-  onDeleteItem?: (key: string, table: SyncableObjectNames) => void | Promise<void>;
+  onInsert?: (changes: Map<SyncableObjectName, Map<string, ICreateChange>>) => void | Promise<void>;
+  onUpdate?: (changes: Map<SyncableObjectName, Map<string, IUpdateChange>>) => void | Promise<void>;
+  onDelete?: (changes: Map<SyncableObjectName, Map<string, IDeleteChange>>) => void | Promise<void>;
 }
 
+// TODO make it singleton
 export class DexieObservableListener {
   private callbacks: OnLocalChangeCallbacks;
 
@@ -40,25 +32,31 @@ export class DexieObservableListener {
     db.on('changes', (changes) => {
       void callbacks.onChange?.(changes);
 
-      const inserts: ICreateChange[] = [];
-      const updates: IUpdateChange[] = [];
-      const deletes: IDeleteChange[] = [];
-      const changeByTable: Map<string, IDatabaseChange[]> = new Map();
+      const inserts: Map<SyncableObjectName, Map<string, ICreateChange>> = new Map();
+      const updates: Map<SyncableObjectName, Map<string, IUpdateChange>> = new Map();
+      const deletes: Map<SyncableObjectName, Map<string, IDeleteChange>> = new Map();
+      const changeByTable: Map<SyncableObjectName, IDatabaseChange[]> = new Map();
 
       for (const change of changes) {
         if (!(SyncableTables as string[]).includes(change.table)) continue;
-        if (!changeByTable.has(change.table)) changeByTable.set(change.table, [change]);
-        else changeByTable.get(change.table)!.push(change);
+        const table = change.table as SyncableObjectName;
+        if (!changeByTable.has(table)) {
+          changeByTable.set(table, [change]);
+          inserts.set(table, new Map<string, ICreateChange>());
+          updates.set(table, new Map<string, IUpdateChange>());
+          deletes.set(table, new Map<string, IDeleteChange>());
+        }
+        else changeByTable.get(table)!.push(change);
 
         switch (change.type as number) {
           case 1:
-            inserts.push(change as ICreateChange);
+            inserts.get(table)!.set(change.key as string, change as ICreateChange);
             break;
           case 2:
-            updates.push(change as IUpdateChange);
+            updates.get(table)!.set(change.key as string, change as IUpdateChange);
             break;
           case 3:
-            deletes.push(change as IDeleteChange);
+            deletes.get(table)!.set(change.key as string, change as IDeleteChange);
             break;
         }
       }
@@ -66,13 +64,6 @@ export class DexieObservableListener {
       void this.callbacks.onInsert?.(inserts);
       void this.callbacks.onUpdate?.(updates);
       void this.callbacks.onDelete?.(deletes);
-
-      if (this.callbacks.onInsertItem)
-        void this.onInsertItem(inserts)
-      if (this.callbacks.onUpdateItem)
-        void this.onUpdateItem(updates);
-      if (this.callbacks.onDeleteItem)
-        void this.onDeleteItem(deletes);
 
       if (this.callbacks.onAnnotationChanges !== undefined) {
         const annotationsChanges = changeByTable.get("annotations");
@@ -95,57 +86,5 @@ export class DexieObservableListener {
           void this.callbacks.onDataModelChanges(dataModelChanges);
       }
     });
-  }
-
-  private async onInsertItem(changes: ICreateChange[]): Promise<void> {
-    changes = changes.sort(
-      (a, b) =>
-        (a.table === "collections" ? 0 : 1) - (b.table === "collections" ? 0 : 1)
-    )
-    for (const change of changes) {
-      if (change.table === "collections") {
-        await this.callbacks.onInsertItem!(
-          change.obj as SyncableObject,
-          change.table as SyncableObjectNames
-        );
-        continue;
-      }
-      void this.callbacks.onInsertItem!(
-        change.obj as SyncableObject,
-        change.table as SyncableObjectNames
-      );
-    }
-  }
-
-  private async onUpdateItem(changes: IUpdateChange[]): Promise<void> {
-    changes = changes.sort(
-      (a, b) =>
-        (a.table === "collections" ? 0 : 1) - (b.table === "collections" ? 0 : 1)
-    )
-    for (const change of changes) {
-      if (change.table === "collections") {
-        await this.callbacks.onUpdateItem!(
-          change.obj as SyncableObject,
-          change.oldObj as SyncableObject,
-          change.table as SyncableObjectNames
-        );
-        continue;
-      }
-      void this.callbacks.onUpdateItem!(
-        change.obj as SyncableObject,
-        change.oldObj as SyncableObject,
-        change.table as SyncableObjectNames,
-      );
-    }
-  }
-
-  private onDeleteItem(changes: IDeleteChange[]): void {
-    for (const change of changes) {
-      // order don't matter, no race conditions
-      void this.callbacks.onDeleteItem!(
-        change.key as string,
-        change.table as SyncableObjectNames,
-      );
-    }
   }
 }

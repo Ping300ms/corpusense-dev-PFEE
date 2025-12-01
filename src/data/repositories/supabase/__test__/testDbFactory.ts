@@ -12,7 +12,7 @@ import { Result } from '@/data/models/Result';
 import { StoredManifestContent, StoredManifestDetails } from '@/data/models/StoredManifest';
 import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
-import { SyncPendingOperations } from '@/data/models/SyncPendingOperations';
+import { SyncPendingOperation } from '@/data/models/SyncPendingOperation.ts';
 
 /**
  * Fabrique une instance isolée de la base pour les tests
@@ -57,7 +57,7 @@ export function createTestDb() {
  */
 export function createTestDbSync() {
   const dbSync = new Dexie('sync-test', { indexedDB: indexedDB, IDBKeyRange: IDBKeyRange }) as Dexie & {
-    pendingOperations: EntityTable<SyncPendingOperations, 'id'>;
+    pendingOperations: EntityTable<SyncPendingOperation, 'id'>;
   };
 
   dbSync.version(1).stores({

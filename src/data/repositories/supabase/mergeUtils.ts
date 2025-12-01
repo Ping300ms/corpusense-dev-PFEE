@@ -1,4 +1,4 @@
-import { SyncableObject, SyncableObjectNames } from '@/data/models/Syncable.ts';
+import { SyncableObject, SyncableObjectName } from '@/data/models/Syncable.ts';
 import { Annotation } from '@/data/models/Annotation.ts';
 import { CollectionContent, CollectionDetails } from '@/data/models/Collection.ts';
 import { DataModel } from '@/data/models/DataModel';
@@ -219,7 +219,7 @@ export function merge(
   localDate: Date,
   remote: SyncableObject,
   remoteDate: Date,
-  type: SyncableObjectNames,
+  type: SyncableObjectName,
   oldLocal: SyncableObject | null = null,
 ): SyncableObject {
   const param = { newLocal, localDate, remote, remoteDate, oldLocal };

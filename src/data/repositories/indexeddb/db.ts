@@ -10,7 +10,7 @@ import { Tag } from '@/data/models/Tag';
 import { Worker } from '@/data/models/Worker';
 import Dexie, { type EntityTable } from 'dexie';
 import 'dexie-observable';
-import { SyncPendingOperations } from '@/data/models/SyncPendingOperations.ts';
+import { SyncPendingOperation } from '@/data/models/SyncPendingOperation.ts';
 
 const db = new Dexie('mezanno') as Dexie & {
   collections: EntityTable<CollectionDetails, 'id'>;
@@ -28,7 +28,7 @@ const db = new Dexie('mezanno') as Dexie & {
 };
 
 const dbSync = new Dexie('sync') as Dexie & {
-  pendingOperations: EntityTable<SyncPendingOperations, 'id'>;
+  pendingOperations: EntityTable<SyncPendingOperation, 'id'>;
 }
 
 db.version(1).stores({
