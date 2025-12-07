@@ -1,9 +1,11 @@
-import { SyncableObject, SyncableObjectName } from '@/data/models/Syncable.ts';
+import { SyncableObject } from '@/data/models/Syncable.ts';
 import { Annotation } from '@/data/models/Annotation.ts';
 import { CollectionContent, CollectionDetails } from '@/data/models/Collection.ts';
 import { DataModel } from '@/data/models/DataModel';
 import isEqual from 'lodash/isEqual';
 import { CollectionElement } from '@/data/models/CollectionElement.ts';
+import { SyncPendingOperation } from '@/data/models/SyncPendingOperation.ts';
+import Backup from '@/data/models/Backup.ts';
 
 type MergeParameters<T> = {
   newLocal: T,
@@ -215,16 +217,19 @@ function mergeAnnotation(param: MergeParameters<Annotation>): Annotation {
 }
 
 export function merge(
-  newLocal: SyncableObject,
-  localDate: Date,
-  remote: SyncableObject,
-  remoteDate: Date,
-  type: SyncableObjectName,
-  oldLocal: SyncableObject | null = null,
+  change: {newObj: SyncableObject, oldObj: SyncableObject},
+  remote: Backup,
+  operation: SyncPendingOperation,
 ): SyncableObject {
-  const param = { newLocal, localDate, remote, remoteDate, oldLocal };
+  const param = {
+    newLocal: change.newObj,
+    localDate: operation.date,
+    remote: remote.content,
+    remoteDate: new Date(remote.updated_at),
+    oldLocal: change.oldObj,
+  };
 
-  switch (type) {
+  switch (operation.table) {
     case 'annotations':
       return mergeAnnotation(param as MergeParameters<Annotation>);
     case 'collections':
