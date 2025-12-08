@@ -332,10 +332,15 @@ export class SyncManager {
       );
     }
 
-    await this.removePendingOperations(operationToDelete);
-    await this.create(toCreate, type);
+    if (operationToDelete.length > 1)
+      await this.removePendingOperations(operationToDelete);
+    if (operationToDelete.length > 1)
+      await this.create(toCreate, type);
 
-    const { error } = await this.client.from(this.backupTableName).upsert<Backup>(toPush);
+    const { error } = await this.client.from(this.backupTableName).upsert<Backup>(
+      toPush,
+      {onConflict: 'owner_id,object_type,object_id'}
+    );
 
     if (error != null)
       this.remoteRequestErrorHandler(objects_id, 'UPDATE', error);
@@ -385,19 +390,22 @@ export class SyncManager {
         }
       );
 
-    for (const table in SyncableTables) {
-      const operations = operationsMap.get(table as SyncableObjectName);
+    // for (const table of SyncableTables) weird behavior, table = 0..3 I don't know why
+    for (let i = 0; i < SyncableTables.length; i++) {
+      const table = SyncableTables[i];
+      const operations = operationsMap.get(table);
       if (operations == undefined) continue;
 
       if (operations.insert.length > 0) {
         operationsCount += operations.insert.length;
-        const {objects, validOperations} = await this.chekValidOperations(operations.insert, table as SyncableObjectName);
-        await this.create(objects, table as SyncableObjectName, validOperations);
+        const {objects, validOperations} = await this.chekValidOperations(operations.insert, table);
+        console.log("test", objects);
+        await this.create(objects, table, validOperations);
       }
 
       if (operations.update.length > 0) {
         operationsCount += operations.update.length;
-        const {objects, validOperations} = await this.chekValidOperations(operations.update, table as SyncableObjectName);
+        const {objects, validOperations} = await this.chekValidOperations(operations.update, table);
         await this.push(operations.update.map((op, i) => {
           if (op.old == null) throw Error("Old version missing");
           return {newObj: objects[i], oldObj: op.old}
@@ -566,7 +574,7 @@ export class SyncManager {
   //endregion
 
   //region Share logic
-  public async Share(objectId: string, sharedUserMail: string, type: 'collections' | 'models', permission: 'R' | 'RW' | 'RWD'): Promise<{
+  public async share(objectId: string, sharedUserMail: string, type: 'collections' | 'models', permission: 'R' | 'RW' | 'RWD'): Promise<{
     error: string
   } | null> {
     const user = await this.getUser();
@@ -597,8 +605,13 @@ export class SyncManager {
   }
 
   public async onShared(payload: RealtimePostgresInsertPayload<BackupShares>) {
+    const { backup_id, shared_user } = payload.new
+
+    const user = await this.getUser();
+    if (user == null) return { error: `[SHARE] error not logged in` };
+    if (shared_user !== user) return;
     console.log("A collection has been shared with you !");
-    const { backup_id } = payload.new
+
     const { data, error } = await this.client
       .from(this.backupTableName)
       .select('content, object_type')
@@ -608,6 +621,7 @@ export class SyncManager {
       console.error(error);
       return;
     }
+
     const annotations = [];
     for (const entity of data) {
       switch (entity.object_type) {
@@ -686,7 +700,7 @@ export class SyncManager {
 
   private async removePendingOperations(operations: SyncPendingOperation[]) {
     await this.operationDb.pendingOperations.bulkDelete(operations.map((o) => o.id));
-    this.LogTime(operations);
+    this.logTime(operations);
   }
 
   //endregion
@@ -759,7 +773,6 @@ export class SyncManager {
       return;
     }
 
-    console.log(`[Supabase] Add ${payload.new.object_type} → adding to dexie`);
     const { error } = await this.applyRemoteChange(payload.new);
     if (error) this.localRequestErrorHandler([payload.new.object_id], 'CREATE', error);
     else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
@@ -772,7 +785,6 @@ export class SyncManager {
       return;
     }
 
-    console.log(`[Supabase] Updated ${payload.new.object_type} → update in dexie`, payload.new.content);
     const { error } = await this.applyRemoteChange(payload.new);
     if (error) this.localRequestErrorHandler([payload.new.object_id], 'UPDATE', error);
     else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
@@ -780,7 +792,6 @@ export class SyncManager {
 
   private async onRemoteDelete(payload: RealtimePostgresDeletePayload<Backup>): Promise<void> {
     if (payload.old == null) return;
-    console.log(`[Supabase] Delete ${payload.old.object_type} → delete in dexie`);
     const { error } = await this.applyRemoteDelete(payload.old);
     if (error && payload.old.object_id != null) this.localRequestErrorHandler([payload.old.object_id], 'DELETE', error);
   }
@@ -871,7 +882,7 @@ export class SyncManager {
 
   //region Error handlers
   private remoteRequestErrorHandler(key: string[], operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET', error: PostgrestError): void {
-    console.log(`[Supabase] Remote ${operation} on ${key.toString()} failed: ${error.message}`, error);
+    console.log(`[Supabase] Remote ${operation} failed: ${error.message}`, error, key);
   }
 
   private localRequestErrorHandler(key: string[], operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET', error: DexieError): void {
@@ -886,16 +897,20 @@ export class SyncManager {
   //endregion
 
   // log time between now and SyncPendinOperations that have been completed
-  private LogTime(operations: SyncPendingOperation[]) {
-    const now = performance.now();
-    let res = ""
+  private logTime(operations: SyncPendingOperation[]) {
+    if (operations.length === 0) return;
+    const now = new Date();
     const durationArray: number[] = [];
     for (const operation of operations) {
-      const duration = now - operation.date.getTime()
+      const duration = now.getTime() - operation.date.getTime()
       durationArray.push(duration)
-      res += `Operation ${operation.type} to ${operation.location} done in ${duration}ms\n`;
     }
-    console.log(res + `Operations duration results:
+    if (operations.length < 2) {
+      const operation = operations[0];
+      console.log(`Operations ${operation.type} on ${operation.table} duration results: ${now.getTime() - operation.date.getTime()}ms`);
+      return;
+    }
+    console.log(`${operations[0].table} ${operations[0].type} on ${operations[0].location} duration results:
     - Average: ${durationArray.reduce((a, b) => a + b) / durationArray.length}
     - Max: ${durationArray.reduce((a, b) => a > b ? a : b)}ms
     - Min: ${durationArray.reduce((a, b) => a < b ? a : b)}ms`)

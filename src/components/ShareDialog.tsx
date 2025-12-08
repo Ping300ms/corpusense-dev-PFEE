@@ -20,7 +20,7 @@ export default function ShareDialog({ onClose, objectShared }: Props) {
 
     toast.info("Partage en cours");
     const manager = SyncManager.getInstance();
-    const res = await manager.Share(objectShared, email, "collections", "RWD");
+    const res = await manager.share(objectShared, email, "collections", "RWD");
     if (res?.error != undefined) {
       toast.error(res?.error);
       console.error(res?.error);

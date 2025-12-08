@@ -49,7 +49,7 @@ export const CanvasViewerContent = ({ collectionId }: { collectionId?: string })
     hoveredElement,
     error,
   } = useCanvasViewerContext();
-  console.log(`CanvasViewerContent - render ${canvas.id}, ${collectionId}`);
+  // console.log(`CanvasViewerContent - render ${canvas.id}, ${collectionId}`);
   const anno = useAnnotator<AnnotoriousOpenSeadragonAnnotator>(); //useRef perd la référence lors des opérations de suppression...
 
   const annotationsInAnnotorious = useAnnotations();
@@ -65,7 +65,7 @@ export const CanvasViewerContent = ({ collectionId }: { collectionId?: string })
   const isNewCanvas = useRef(true); //to check if the canvas is new (to avoid syncing the annotations when the canvas is the same)
 
   useEffect(() => {
-    if (isNewCanvas.current === false) {
+    if (!isNewCanvas.current) {
       //sync the annotations in the store with the annotations in annotorious
       annotationsInStore.forEach((annotation) => {
         const existing = annotationsInAnnotorious.find((a) => a.id === annotation.id);
