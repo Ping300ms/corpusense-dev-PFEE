@@ -1,7 +1,7 @@
 import { SyncableObject, SyncableObjectName } from '@/data/models/Syncable.ts';
 
 export default interface Backup {
-  id?: string;
+  id: string;
   owner_id: string;
   object_id: string; // content.id
   object_type: SyncableObjectName;
