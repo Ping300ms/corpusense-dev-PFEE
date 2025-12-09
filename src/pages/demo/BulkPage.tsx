@@ -30,15 +30,15 @@ export default function BulkPage() {
       dexieListener = new DexieObservableListener(
         db,
         {
-          onAdd: (p) => {
+          onInsertItem: (p) => {
             void loadData();
             console.log("added " + p.id)
           },
-          onUpdate: (p) => {
+          onUpdateItem: (p) => {
             void loadData();
             console.log("updated " + p.id)
           },
-          onDelete: (p) => {
+          onDeleteItem: (p) => {
             void loadData();
             console.log("deleted " + p)
           },

@@ -3,11 +3,13 @@ import {
   RealtimePostgresDeletePayload,
   RealtimePostgresInsertPayload,
   RealtimePostgresUpdatePayload,
-  SupabaseClient,
+  SupabaseClient, User,
 } from '@supabase/supabase-js';
 import {
   SupabaseListenerProperties
 } from '@/data/repositories/supabase/SupabaseListenerProperties.ts';
+import Backup from '@/data/models/Backup.ts';
+import { BackupShares } from '@/data/models/BackupShares.ts';
 
 export enum ListenerState {
   DISCONNECTED = 'disconnected',
@@ -15,8 +17,7 @@ export enum ListenerState {
   SUBSCRIBED = 'subscribed',
 }
 
-/* eslint-disable-next-line */
-export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> {
+export class SupabaseRealtimeListener {
   private readonly backoffMultiplier: number;
   private readonly baseRetryDelay: number;
   private channel: null | ReturnType<typeof this.supabaseClient.channel> = null;
@@ -25,10 +26,11 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
   private isRetrying = false;
   private readonly maxRetries: number;
   private readonly maxRetryDelay: number;
-  private readonly onInsert?: (payload: RealtimePostgresInsertPayload<TableType>) => void | Promise<void>;
-  private readonly onUpdate?: (payload: RealtimePostgresUpdatePayload<TableType>) => void | Promise<void>;
-  private readonly onDelete?: (payload: RealtimePostgresDeletePayload<TableType>) => void | Promise<void>;
+  private readonly onInsert?: (payload: RealtimePostgresInsertPayload<Backup>) => void | Promise<void>;
+  private readonly onUpdate?: (payload: RealtimePostgresUpdatePayload<Backup>) => void | Promise<void>;
+  private readonly onDelete?: (payload: RealtimePostgresDeletePayload<Backup>) => void | Promise<void>;
   private readonly onSubscribed?: () => void | Promise<void>;
+  private readonly onShared?: (payload: RealtimePostgresInsertPayload<BackupShares>) => void | Promise<void>;
   private retryCount: number;
   private retryTimeout: ReturnType<typeof setTimeout> | undefined;
   private readonly supabaseClient: Pick<SupabaseClient, 'channel' | 'removeChannel' | 'auth'>;
@@ -36,20 +38,21 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
   private listenerState: ListenerState = ListenerState.DISCONNECTED;
 
   constructor({
-                backoffMultiplier = 1.5,
-                baseRetryDelay = 3_000,
+                backoffMultiplier = 2,
+                baseRetryDelay = 2_000,
                 channelBaseName,
                 databaseSchemaName = 'public',
                 maxRetries = 10,
-                maxRetryDelay = 30_000,
+                maxRetryDelay = 32_000,
                 onInsert,
                 onUpdate,
                 onDelete,
                 onSubscribed,
+                onShared,
                 retryCount = 0,
                 supabaseClient,
                 tableName,
-              }: SupabaseListenerProperties<TableType>) {
+              }: SupabaseListenerProperties) {
     this.maxRetries = maxRetries
     this.baseRetryDelay = baseRetryDelay
     this.maxRetryDelay = maxRetryDelay
@@ -60,6 +63,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.onUpdate = onUpdate;
     this.onDelete = onDelete;
     this.onSubscribed = onSubscribed;
+    this.onShared = onShared;
     this.channelBaseName = channelBaseName
     this.supabaseClient = supabaseClient
     this.databaseSchemaName = databaseSchemaName
@@ -76,6 +80,7 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     } finally {
       this.channel = null
       this.listenerState = ListenerState.DISCONNECTED;
+      this.resetRetries();
     }
   }
 
@@ -92,16 +97,15 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.retryCount += 1
 
     if (this.retryCount > this.maxRetries) {
-      console.error(`Max retries (${this.maxRetries}) exceeded`)
-
+      // console.error(`Max retries (${this.maxRetries}) exceeded`)
       return
     }
 
     const delay = Math.min(this.baseRetryDelay * Math.pow(this.backoffMultiplier, this.retryCount - 1), this.maxRetryDelay)
 
-    console.warn(`Retry attempt ${this.retryCount} in ${Math.round(delay / 1000)}s`)
+    // console.info(`Retry attempt ${this.retryCount} in ${Math.round(delay / 1000)}s`)
 
-    clearTimeout(this.retryTimeout)
+    clearTimeout(this.retryTimeout);
     this.retryTimeout = setTimeout(() => {
       this.isRetrying = false
       void this.subscribe()
@@ -116,11 +120,16 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     await this.removeExistingChannel()
     console.info('Creating new realtime subscription...')
 
-    const user = (await this.supabaseClient.auth.getUser()).data.user;
+    let i = 0;
+    let user: User | null = null;
+    while (user == null && i < 3) {
+      user = (await this.supabaseClient.auth.getUser()).data.user;
+      i++;
+    }
+
     if (user === null) {
-      console.log('User is not authenticated');
-      this.resetRetries();
-      return; // simply cancel, will retry to subscribe when Auth State change in SyncManager
+      console.warn("User not set");
+      return;
     }
 
     // Add Date.now() to exclude collision between retries
@@ -131,26 +140,30 @@ export class SupabaseRealtimeListener<TableType extends { [key: string]: any }> 
     this.channel = this.supabaseClient.channel(channelName)
 
     this.channel
-      .on<TableType>('postgres_changes',
-        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresInsertPayload<TableType>) => {
-        console.info('Insert received:', payload)
+      .on<Backup>('postgres_changes',
+        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName },
+        (payload: RealtimePostgresInsertPayload<Backup>) => {
         void this.onInsert?.(payload);
       })
-      .on<TableType>(
+      .on<Backup>(
         'postgres_changes',
-        { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresUpdatePayload<TableType>) => {
-          console.info('Update received:', payload)
+        { event: 'UPDATE', schema: this.databaseSchemaName, table: this.tableName },
+        (payload: RealtimePostgresUpdatePayload<Backup>) => {
           void this.onUpdate?.(payload);
         },
       )
-      .on<TableType>(
+      .on<Backup>(
         'postgres_changes',
-        { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName, filter: `user_id=eq.${user.id}` },
-        (payload: RealtimePostgresDeletePayload<TableType>) => {
-          console.info('Delete received:', payload)
+        { event: 'DELETE', schema: this.databaseSchemaName, table: this.tableName },
+        (payload: RealtimePostgresDeletePayload<Backup>) => {
           void this.onDelete?.(payload);
+        },
+      )
+      .on<BackupShares>(
+        'postgres_changes',
+        { event: 'INSERT', schema: this.databaseSchemaName, table: this.tableName+'_shares' },
+        (payload: RealtimePostgresInsertPayload<BackupShares>) => {
+          void this.onShared?.(payload);
         },
       )
       .subscribe((status, error) => {

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/accordion';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Collection } from '@/data/models/Collection';
+import { Collection, CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import { fetchAnnotationsRequest } from '@/state/reducers/annotations';
 import { loadCollectionRequest } from '@/state/reducers/collections';
@@ -24,6 +24,10 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeGrid as Grid } from 'react-window';
+import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
+import { ICreateChange, IDatabaseChange, IDeleteChange, IUpdateChange } from 'dexie-observable/api';
+import { Annotation } from '@/data/models/Annotation.ts';
+import { db } from '@/data/repositories/indexeddb/db.ts';
 
 interface GridCellProps {
   columnIndex: number;
@@ -90,6 +94,38 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
       appDispatch(loadEntitiesRequest({ canvasId: canvasToDisplay.id, collectionId }));
     }
   }, [canvasToDisplay]);
+
+  const onAnnotationChanges = (changes: IDatabaseChange[]) => {
+    if (canvasToDisplay !== undefined && changes.some((change) => {
+      switch (change.type as number) {
+        case 1:
+          return ((change as ICreateChange).obj as Annotation).collectionId === collectionId;
+        case 2:
+          return ((change as IUpdateChange).obj as Annotation).collectionId === collectionId;
+        case 3:
+          return ((change as IDeleteChange).oldObj as Annotation).collectionId === collectionId;
+        default:
+          return false;
+      }
+    })) {
+      appDispatch(fetchAnnotationsRequest({ canvasId: canvasToDisplay.id, collectionId }));
+    }
+  }
+
+  const onCollectionDetailsChanges = (changes: IDatabaseChange[]) => {
+    if (canvasToDisplay !== undefined && changes.some((change) => {
+      if (change.type as number === 2)
+        return ((change as IUpdateChange).obj as CollectionDetails).id === collectionId;
+      return false
+    })) {
+      appDispatch(loadCollectionRequest(collectionId));
+    }
+  };
+
+  new DexieObservableListener(db, {
+    onAnnotationChanges,
+    onCollectionDetailsChanges,
+  })
 
   const handleOnResize = (size: { height: number; width: number }) => {
     if (size.width < 200) {
