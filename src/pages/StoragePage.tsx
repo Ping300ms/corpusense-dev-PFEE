@@ -31,54 +31,26 @@ type ImageData = {
   thumbImageUrl?: string;
 };
 
-async function uploadImageToSupabase(
+async function uploadToSupabase(
   folder: string,
-  imageDataUrl: string,
+  data: string | Manifest,
   fileName: string,
-  userId: string
+  userId: string,
+  isPrivate: boolean
 ): Promise<void> {
-  const imageFile = await fetch(imageDataUrl).then((res) => res.blob());
-  const { data: fullImageData, error: fullImageError } = await supabase.storage
-    .from('images')
-    .upload(`${userId}/${folder}/${folder}_${fileName}.png`, imageFile, {
+  const blob : Blob = typeof data === 'string'
+    ? await fetch(data).then((res) => res.blob())
+    : new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const { data: fullImageData, error: Error } = await supabase.storage
+    .from(isPrivate ? 'private-images' : 'public-images')
+    .upload(`${userId}/${folder}/${fileName}`, blob, {
       cacheControl: '3600',
       upsert: false,
     });
-  if (fullImageError) {
-    console.error('Erreur upload :', fullImageError.message);
+  if (Error) {
+    console.error('Erreur upload :', Error.message);
   } else {
     console.log('Fichier uploadé :', fullImageData);
-  }
-
-  // const thumb = await reduceBlob.toBlob(imageFile, {
-  //   max: 200,
-  // });
-  // const { data: thumbImageData, error: thumbImageError } = await supabase.storage
-  //   .from('corpusense')
-  //   .upload(`${fileName}_thumb.png`, thumb, {
-  //     cacheControl: '3600',
-  //     upsert: false,
-  //   });
-  // if (thumbImageError) {
-  //   console.error('Erreur upload :', thumbImageError.message);
-  // } else {
-  //   console.log('Fichier uploadé :', thumbImageData);
-  // }
-}
-
-async function uploadManifestToSupabase(folder: string, manifest: Manifest, userId: string) {
-  const jsonBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
-
-  const { data, error } = await supabase.storage
-    .from('images')
-    .upload(`${userId}/${folder}/manifest.json`, jsonBlob, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-  if (error) {
-    console.error('Erreur upload :', error.message);
-  } else {
-    console.log('Fichier uploadé :', data);
   }
 }
 
@@ -97,6 +69,8 @@ const StoragePage = () => {
   const dragOverItem = useRef<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [progressRenderPDFToImages, setProgressRenderPDFToImages] = useState(0);
+  const [isPrivate, setIsPrivate] = useState(false);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -186,15 +160,31 @@ const StoragePage = () => {
       return;
     }
 
-    const loadPdf = () => {
-      for (let i = 0; i < images.length; i++) {
-        const filename = `${i + 1}`;
-        void uploadImageToSupabase(documentName, images[i].data, filename, userId ?? '');
-        images[i].fullImageUrl =
-          `${CANTALOUPE_URL}${userId}%2F${documentName}%2F${documentName}_${filename}.png/full/max/0/default.png`;
-        images[i].thumbImageUrl =
-          `${CANTALOUPE_URL}${userId}%2F${documentName}%2F${documentName}_${filename}.png/full/,120/0/default.png`;
-      }
+    const loadPdf = async () => {
+      setUploading(true);
+      await Promise.all(
+        images.map(async (img, i) => {
+          const filename = `${documentName}_${i + 1}.png`;
+
+          const uploadPromise = uploadToSupabase(
+            documentName,
+            img.data,
+            filename,
+            userId ?? '',
+            isPrivate
+          );
+
+          // Update URLs synchronously
+          img.fullImageUrl =
+            `${CANTALOUPE_URL}${userId}%252F${documentName}%252F${filename}/full/max/0/default.png`;
+
+          img.thumbImageUrl =
+            `${CANTALOUPE_URL}${userId}%252F${documentName}%252F${filename}/full/,120/0/default.png`;
+
+          return uploadPromise;
+        })
+      );
+
       const newManifest = generateManifest(
         documentName.trim(),
         images.map((img) => ({
@@ -203,18 +193,17 @@ const StoragePage = () => {
           width: img.width,
           height: img.height,
         })),
-        documentName, // Ajouter le préfixe de nom de fichier comme dossier),
+        `${userId}/${documentName}`, // Ajouter le préfixe de nom de fichier comme dossier ),
       );
-      void uploadManifestToSupabase(documentName, newManifest, userId ?? '');
+      void uploadToSupabase(documentName, newManifest, "manifest.json", userId ?? '', isPrivate);
       console.log('Generated Manifest: ', newManifest);
 
       setManifestUrl(newManifest.id);
+      setUploading(false);
     };
-    setUploading(true);
     void loadPdf();
     setImages([]);
     setDocumentName('');
-    setUploading(false);
   };
 
   const dragStart = (_ : React.DragEvent<HTMLDivElement>, position: number) => {
@@ -266,6 +255,7 @@ const StoragePage = () => {
       <div className='flex flex-col items-center border p-2'>
         <h2 className='text-lg'>Ajouter un document</h2>
         <form className='flex w-1/2 flex-col space-y-2'>
+          <div className="flex items-center gap-10">
           <Input
             type='text'
             required
@@ -273,6 +263,10 @@ const StoragePage = () => {
             value={documentName}
             onChange={(e) => setDocumentName(e.target.value)}
           />
+          <label className="flex items-center gap-2" >Privé
+          <input type='checkbox' checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)}/>
+          </label>
+          </div>
           <Input type='file' accept='application/pdf' onChange={handleFileChange}/>
           <div className={"overflow-auto max-h-[500px] p-2"}>
             {isUploading &&
@@ -318,11 +312,18 @@ const StoragePage = () => {
               Upload
             </Button>
           ) : (
-            <SyncLoader />
+            <div className={"flex flex-col items-center justify-center p-4 gap-10 "}>
+              <span className="text-sm">Chargement en cours, ne quittes pas la page ! </span>
+              <SyncLoader />
+            </div>
           )}
           {manifestUrl !== null && (
-            <div className='mt-4'>
-              <h2> 🥳 T&apos;es un winner ! Ton document est en ligne : {manifestUrl}</h2>
+            <div className='mt-4 flex flex-col items-center text-center'>
+              <h2> 🥳 T&apos;es un winner !
+                <br />
+                Ton document est en ligne :&nbsp;
+                <a className="font-medium text-fg-brand underline hover:no-underline accent-blue-500" href={manifestUrl}>ici</a>
+              </h2>
               <Fireworks autorun={{ speed: 2, duration: 4 }} />
             </div>
           )}

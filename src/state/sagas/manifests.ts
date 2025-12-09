@@ -23,6 +23,7 @@ import {
   saveMetadataSuccess,
   setHistory,
 } from '../reducers/manifests';
+import { supabase } from '@/utils/config.ts';
 
 /**
  * Side effect to fetch a manifest from a URL. First, it checks if the manifest is already
@@ -44,10 +45,41 @@ function* fetchManifestFromURL(url: string): Generator<Effect, Manifest, Manifes
     const importer =
       importerKey !== undefined ? importerPlugins[importerKey] : importerPlugins['default'];
     if (importer !== undefined && importer !== null) {
+      console.log("URL AVANT TRY :",url);
       try {
-        const manifest = yield call(fetchManifest, {
-          fetchFunction: () => importer.import(url),
-        });
+        console.log("importer :",importer);
+        const supabaseUrl : string = import.meta.env.VITE_SUPABASE_URL as string ?? "";
+        console.log("SUPABASE URL :",supabaseUrl);
+        let manifest = null;
+        console.log("Avant le if");
+        if(supabaseUrl.length > 0 && url.startsWith(supabaseUrl)){
+          console.log("Dans le IF");
+          manifest = yield call(fetchManifest, {
+            fetchFunction: async () => {
+              const { data: { session } } = await supabase.auth.getSession();
+              const token = session?.access_token;
+              const res = await fetch(url, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              console.log(res);
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+              }
+              const json = res.json();
+              console.log(json);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return json;
+            },
+          });
+        }
+        else{
+          console.log("Dans le ELSE");
+          manifest = yield call(fetchManifest, {
+            fetchFunction: () => importer.import(url),
+          });
+        }
         const manifestRepository = getManifestRepository();
         yield call([manifestRepository, manifestRepository.add], manifest);
         return manifest;
