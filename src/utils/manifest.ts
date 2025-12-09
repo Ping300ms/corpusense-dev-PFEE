@@ -34,7 +34,7 @@ export const generateManifest = (
   canvasInfo: CanvasInfo[],
   folder: string,
 ): Manifest => {
-  const url_supabase = `${import.meta.env.VITE_SUPABASE_STORAGE_URL}/${folder}`;
+  const url_supabase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-resource?path=${folder}`;
 
   return {
     '@context': 'http://iiif.io/api/presentation/3/context.json',
