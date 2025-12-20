@@ -11,7 +11,7 @@ import { Outlet } from 'react-router-dom';
 import { toast } from 'sonner';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '../components/ui/sidebar';
 import LayoutSideBar from './LayoutSidebar';
-import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
+import { supabase } from '@/utils/config';
 import { User } from '@supabase/supabase-js';
 import useAppNavigation from '@/hooks/useAppNavigation.tsx';
 

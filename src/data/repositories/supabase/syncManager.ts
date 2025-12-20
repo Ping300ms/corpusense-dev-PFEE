@@ -8,7 +8,7 @@ import {
 } from '@supabase/supabase-js';
 import { db, dbSync } from '@/data/repositories/indexeddb/db.ts';
 import { DexieError, EntityTable } from 'dexie';
-import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
+import { supabase } from '@/utils/config';
 import { SyncableObject, SyncableObjectNames, SyncableTables } from '@/data/models/Syncable.ts';
 import Backup from '@/data/models/Backup.ts';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
