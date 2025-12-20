@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
+import { Lock, LockOpen } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -215,6 +216,57 @@ const StoragePage = () => {
     setDropTargetIndex(position);
   };
 
+  const changeBucket = async (
+    directory: string,
+    privateBucket: boolean
+  ) => {
+    const sourceBucket = privateBucket ? 'private-images' : 'public-images';
+    const destinationBucket = privateBucket ? 'public-images' : 'private-images';
+
+    const { data, error: listError } = await supabase.storage
+      .from(sourceBucket)
+      .list(`${userId}/${directory}`, {
+        limit: 100,
+        offset: 0,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+
+    if (listError) {
+      console.error(listError);
+      throw listError;
+    }
+
+    if (!data || data.length === 0) return;
+
+    for (const file of data) {
+      const sourcePath = `${userId}/${directory}/${file.name}`;
+      const destinationPath = `${userId}/${directory}/${file.name}`;
+
+      const { error: copyError } = await supabase.storage
+        .from(sourceBucket)
+        .copy(sourcePath, destinationPath, {
+          destinationBucket,
+        });
+
+      if (copyError) {
+        console.error(copyError);
+        throw copyError;
+      }
+
+      const { error: removeError } = await supabase.storage
+        .from(sourceBucket)
+        .remove([sourcePath]);
+
+      if (removeError) {
+        console.error(removeError);
+        throw removeError;
+      }
+    }
+    existingManifests.forEach(manifest => {
+      if(manifest.name === directory) manifest.isPrivate = !privateBucket;
+    })
+  };
+
 
   const drop = () => {
     const copyImages = [...images];
@@ -240,12 +292,15 @@ const StoragePage = () => {
         ) : error ? (
           <p>Erreur lors du chargement.</p>
         ) : existingManifests.length > 0 ? (
-          existingManifests.map((url, index) => (
-            <div key={index} className='mb-2'>
-              <a href={`${hrefPath}${url}`}>
-                {hrefPath}
-                {url}
+          existingManifests.map((data, index) => (
+            <div key={index} className='mb-2 flex items-center gap-4 text-blue-600 hover:text-blue-800'>
+              <a href={`${hrefPath}${data.url}`}>
+                {data.name}
               </a>
+              {data.isPrivate ?
+                <Button className='text-red-500 bg-red-200 cursor-pointer' onClick={() => changeBucket(data.name, data.isPrivate)}><Lock/></Button>
+                : <Button className='text-green-500 bg-green-200 cursor-pointer' onClick={() => changeBucket(data.name, data.isPrivate)}> <LockOpen/></Button>
+              }
             </div>
           ))
         ) : (
