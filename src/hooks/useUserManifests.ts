@@ -13,8 +13,14 @@ type UserFile = {
   updated_at: string;
 };
 
+type ManifestData = {
+  url: string;
+  name: string;
+  isPrivate: boolean;
+}
+
 export function useUserManifests() {
-  const [existingManifests, setExistingManifests] = useState<string[]>([]);
+  const [existingManifests, setExistingManifests] = useState<ManifestData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AuthError | PostgrestError | null>(null);
 
@@ -42,7 +48,6 @@ export function useUserManifests() {
           .like('name', '%/manifest.json')
           .eq('owner', user.id);
 
-        console.log("userID : ", user.id);
         const { data: getPublicDirectoriesData, error: getPublicDirectoriesError } = await supabase
           .storage
           .from('public-images')
@@ -69,26 +74,41 @@ export function useUserManifests() {
           throwError(getPrivateDirectoriesError);
         }
 
-        let directories = getPublicDirectoriesData?.map(({ name }) => name) ?? [];
-        directories = directories.concat(getPrivateDirectoriesData?.map(({ name }) => name) ?? []);
-        const urls : string[] = [];
-        console.log("DIR: ", directories);
+        const publicDirectories = getPublicDirectoriesData?.map(({ name }) => name) ?? [];
+        const privateDirectories = getPrivateDirectoriesData?.map(({ name }) => name) ?? [];
+        const manifestsData : ManifestData[] = [];
         if (getPublicDirectoriesError && getPrivateDirectoriesError && userFilesError) {
           setError(userFilesError);
         }
-        if (directories.length > 0) {
-          urls.push(...directories.map((dir) => {
-            return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-resource?path=${user.id}/${dir}/manifest.json`;
+        if (publicDirectories.length > 0) {
+          manifestsData.push(...publicDirectories.map((dir) => {
+            return {url : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-resource?path=${user.id}/${dir}/manifest.json`,
+              name : dir,
+              isPrivate : false
+          }
           }));
-          console.log("URLS: ", urls);
         }
+
+        if (privateDirectories.length > 0) {
+          manifestsData.push(...privateDirectories.map((dir) => {
+            return {url : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-resource?path=${user.id}/${dir}/manifest.json`,
+              name : dir,
+              isPrivate : true
+            }
+          }));
+        }
+        /*
         if(userFiles !== null && userFiles.length > 0) {
-          urls.push(...userFiles.map((file) => {
+          manifestsData.push(...userFiles.map((file) => {
             const { data } = supabase.storage.from('corpusense').getPublicUrl(file.name);
-            return data.publicUrl;
+            return {
+              url: data.publicUrl,
+              name: file.name,
+              isPrivate: false
+            };
           }));
-        }
-        setExistingManifests(urls);
+        }*/
+        setExistingManifests(manifestsData);
       } catch (err) {
         setError(err as PostgrestError);
       } finally {
