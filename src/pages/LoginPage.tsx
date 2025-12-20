@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/data/repositories/supabase/supabaseClient.ts';
+import { supabase } from '@/utils/config';
 import useAppNavigation from '@/hooks/useAppNavigation.tsx';
 
 const LoginPage = () => {

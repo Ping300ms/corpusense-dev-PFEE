@@ -1,6 +1,7 @@
 import { supabase } from '@/utils/config';
 import { AuthError, PostgrestError } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
+import { throwError } from 'redux-saga-test-plan/providers';
 
 //TODO : il est possible de générer les types à partir de supabase : npx supabase gen types typescript --project-id <project-id> > supabase-types.ts
 type UserFile = {
@@ -41,17 +42,53 @@ export function useUserManifests() {
           .like('name', '%/manifest.json')
           .eq('owner', user.id);
 
-        if (userFilesError) {
+        console.log("userID : ", user.id);
+        const { data: getPublicDirectoriesData, error: getPublicDirectoriesError } = await supabase
+          .storage
+          .from('public-images')
+          .list(user.id, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: 'name', order: 'asc' },
+          })
+
+        if(getPublicDirectoriesError || getPublicDirectoriesData === null){
+          throwError(getPublicDirectoriesError);
+        }
+
+        const { data: getPrivateDirectoriesData, error: getPrivateDirectoriesError } = await supabase
+          .storage
+          .from('private-images')
+          .list(user.id, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: 'name', order: 'asc' },
+          })
+
+        if(getPrivateDirectoriesError || getPrivateDirectoriesData === null){
+          throwError(getPrivateDirectoriesError);
+        }
+
+        let directories = getPublicDirectoriesData?.map(({ name }) => name) ?? [];
+        directories = directories.concat(getPrivateDirectoriesData?.map(({ name }) => name) ?? []);
+        const urls : string[] = [];
+        console.log("DIR: ", directories);
+        if (getPublicDirectoriesError && getPrivateDirectoriesError && userFilesError) {
           setError(userFilesError);
-        } else if (userFiles !== null && userFiles.length > 0) {
-          const urls = userFiles.map((file) => {
+        }
+        if (directories.length > 0) {
+          urls.push(...directories.map((dir) => {
+            return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-resource?path=${user.id}/${dir}/manifest.json`;
+          }));
+          console.log("URLS: ", urls);
+        }
+        if(userFiles !== null && userFiles.length > 0) {
+          urls.push(...userFiles.map((file) => {
             const { data } = supabase.storage.from('corpusense').getPublicUrl(file.name);
             return data.publicUrl;
-          });
-          setExistingManifests(urls);
-        } else {
-          setExistingManifests([]);
+          }));
         }
+        setExistingManifests(urls);
       } catch (err) {
         setError(err as PostgrestError);
       } finally {
