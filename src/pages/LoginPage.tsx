@@ -3,82 +3,27 @@ import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
-import { supabase } from '@/utils/config';
 import useAppNavigation from '@/hooks/useAppNavigation.tsx';
+import { useAuth } from '@/hooks/useAuth';
 
 const LoginPage = () => {
   const { t } = useTranslation();
   const navigate = useAppNavigation();
+  const { login, loginWithProvider, loading, error, setError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setErrorMsg(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
+    const { error: loginError } = await login(email, password);
+    if (!loginError) {
       await navigate.goToHome();
     }
-    setLoading(false);
   };
 
-  const handleOAuth = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'github' });
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-        scopes: 'profile email'
-      },
-    });
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-    }
-  };
-
-  const handleGitLabLogin = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'gitlab',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-        scopes: 'read:user user:email',
-      },
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-    }
-  };
-
-  const handleAzureLogin = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        scopes: 'openid profile email',
-        redirectTo: `${window.location.origin}/`,
-      },
-    });
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-    }
+  const handleOAuth = async (provider: 'github' | 'google' | 'gitlab' | 'azure') => {
+    setError(null);
+    await loginWithProvider(provider);
   };
 
   return (
@@ -114,9 +59,10 @@ const LoginPage = () => {
               placeholder="••••••••"
             />
           </div>
-          {(errorMsg != null) && (
+
+          {error !== null && (
             <div className="text-red-600 text-sm">
-              {errorMsg}
+              {error}
             </div>
           )}
 
@@ -133,7 +79,7 @@ const LoginPage = () => {
           <div className="space-y-3">
             <Button
               type="button"
-              onClick={() => void handleOAuth()}
+              onClick={() => void handleOAuth('github')}
               className="w-full bg-gray-800 text-white hover:bg-gray-700"
               disabled={loading}
             >
@@ -142,7 +88,7 @@ const LoginPage = () => {
 
             <Button
               type="button"
-              onClick={() => void handleGoogleLogin()}
+              onClick={() => void handleOAuth('google')}
               className="w-full bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
               disabled={loading}
             >
@@ -152,7 +98,7 @@ const LoginPage = () => {
             <div className="space-y-3">
               <Button
                 type="button"
-                onClick={() => void handleGitLabLogin()}
+                onClick={() => void handleOAuth('gitlab')}
                 className="w-full bg-orange-600 text-white hover:bg-orange-700"
                 disabled={loading}
               >
@@ -161,7 +107,7 @@ const LoginPage = () => {
             </div>
             <Button
               type="button"
-              onClick={() => void handleAzureLogin()}
+              onClick={() => void handleOAuth('azure')}
               className="w-full bg-blue-700 text-white hover:bg-blue-800"
               disabled={loading}
             >
