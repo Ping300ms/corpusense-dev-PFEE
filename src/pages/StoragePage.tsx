@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
-import { Lock, LockOpen } from 'lucide-react';
+import { Loader,Lock, LockOpen } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -31,6 +31,13 @@ type ImageData = {
   fullImageUrl?: string;
   thumbImageUrl?: string;
 };
+
+type ManifestData = {
+  url: string;
+  name: string;
+  isPrivate: boolean;
+  loading: boolean;
+}
 
 async function uploadToSupabase(
   folder: string,
@@ -71,6 +78,7 @@ const StoragePage = () => {
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [progressRenderPDFToImages, setProgressRenderPDFToImages] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [userManifests, setUserManifests] = useState<ManifestData[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -97,6 +105,16 @@ const StoragePage = () => {
       return null;
     })();
   }, []);
+
+  useEffect(() => {
+    console.log("EXISTING MANIFESTS:",existingManifests);
+    setUserManifests(existingManifests.map(manifest => ({
+      url: manifest.url,
+      name: manifest.name,
+      isPrivate: manifest.isPrivate,
+      loading: false})));
+    console.log("USER MANIFESTS:",userManifests);
+  }, existingManifests);
 
   async function renderPdfToImages(file: File): Promise<ImageData[]> {
     const arrayBuffer = await file.arrayBuffer();
@@ -220,6 +238,7 @@ const StoragePage = () => {
     directory: string,
     privateBucket: boolean
   ) => {
+    setUserManifests(prev => prev.map(manifest => manifest.name === directory ? {...manifest, loading: true} : manifest))
     const sourceBucket = privateBucket ? 'private-images' : 'public-images';
     const destinationBucket = privateBucket ? 'public-images' : 'private-images';
 
@@ -262,9 +281,7 @@ const StoragePage = () => {
         throw removeError;
       }
     }
-    existingManifests.forEach(manifest => {
-      if(manifest.name === directory) manifest.isPrivate = !privateBucket;
-    })
+    setUserManifests(prev => prev.map(manifest => manifest.name === directory ? {...manifest, isPrivate: !privateBucket, loading: false} : manifest))
   };
 
 
@@ -291,16 +308,34 @@ const StoragePage = () => {
           <p>Chargement...</p>
         ) : error ? (
           <p>Erreur lors du chargement.</p>
-        ) : existingManifests.length > 0 ? (
-          existingManifests.map((data, index) => (
-            <div key={index} className='mb-2 flex items-center gap-4 text-blue-600 hover:text-blue-800'>
+        ) : userManifests.length > 0 ? (
+          userManifests.map((data, index) => (
+            <div
+              key={index}
+              className="mb-2 flex items-center gap-4 text-blue-600 hover:text-blue-800"
+            >
               <a href={`${hrefPath}${data.url}`}>
                 {data.name}
               </a>
-              {data.isPrivate ?
-                <Button className='text-red-500 bg-red-200 cursor-pointer' onClick={() => changeBucket(data.name, data.isPrivate)}><Lock/></Button>
-                : <Button className='text-green-500 bg-green-200 cursor-pointer' onClick={() => changeBucket(data.name, data.isPrivate)}> <LockOpen/></Button>
-              }
+              {data.loading ? (
+                <Button>
+                  <Loader />
+                </Button>
+              ) : data.isPrivate ? (
+                <Button
+                  className="text-red-500 bg-red-200 cursor-pointer"
+                  onClick={() => changeBucket(data.name, data.isPrivate)}
+                >
+                  <Lock />
+                </Button>
+              ) : (
+                <Button
+                  className="text-green-500 bg-green-200 cursor-pointer"
+                  onClick={() => changeBucket(data.name, data.isPrivate)}
+                >
+                  <LockOpen />
+                </Button>
+              )}
             </div>
           ))
         ) : (
