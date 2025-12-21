@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
-import { Loader,Lock, LockOpen } from 'lucide-react';
+import { Loader, Lock, LockOpen, Share2 } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -255,7 +255,7 @@ const StoragePage = () => {
       throw listError;
     }
 
-    if (!data || data.length === 0) return;
+    if (data === undefined || data.length === 0) return;
 
     for (const file of data) {
       const sourcePath = `${userId}/${directory}/${file.name}`;
@@ -312,11 +312,16 @@ const StoragePage = () => {
           userManifests.map((data, index) => (
             <div
               key={index}
-              className="mb-2 flex items-center gap-4 text-blue-600 hover:text-blue-800"
+              className={"mb-2 flex items-center gap-4 justify-between p-1" + (index !== userManifests.length - 1 ? ' border-b' : '')}
             >
-              <a href={`${hrefPath}${data.url}`}>
+              <a className="hover:text-blue-800" href={`${hrefPath}${data.url}`}>
                 {data.name}
               </a>
+              <div className={"flex gap-2"}>
+                <Button>
+                  <Share2 />
+                  Partager le manifest
+                </Button>
               {data.loading ? (
                 <Button>
                   <Loader />
@@ -327,6 +332,7 @@ const StoragePage = () => {
                   onClick={() => changeBucket(data.name, data.isPrivate)}
                 >
                   <Lock />
+                  Privé
                 </Button>
               ) : (
                 <Button
@@ -334,8 +340,10 @@ const StoragePage = () => {
                   onClick={() => changeBucket(data.name, data.isPrivate)}
                 >
                   <LockOpen />
+                  Public
                 </Button>
               )}
+              </div>
             </div>
           ))
         ) : (
