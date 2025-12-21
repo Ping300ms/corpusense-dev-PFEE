@@ -318,13 +318,10 @@ const StoragePage = () => {
                 {data.name}
               </a>
               <div className={"flex gap-2"}>
-                <Button>
-                  <Share2 />
-                  Partager le manifest
-                </Button>
               {data.loading ? (
                 <Button>
                   <Loader />
+                  Chargement
                 </Button>
               ) : data.isPrivate ? (
                 <Button
@@ -343,6 +340,10 @@ const StoragePage = () => {
                   Public
                 </Button>
               )}
+                <Button>
+                  <Share2 />
+                  Partager
+                </Button>
               </div>
             </div>
           ))
