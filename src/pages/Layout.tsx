@@ -14,6 +14,7 @@ import LayoutSideBar from './LayoutSidebar';
 import { supabase } from '@/utils/config';
 import { User } from '@supabase/supabase-js';
 import useAppNavigation from '@/hooks/useAppNavigation.tsx';
+import { logoutRequest } from '@/state/reducers/auth';
 
 const Layout = () => {
   const { t } = useTranslation();
@@ -68,6 +69,7 @@ const Layout = () => {
     const {error} = await supabase.auth.signOut()
     if (error != null) console.log(error);
     setUser(null)
+    appDispatch(logoutRequest());
     await navigate.goToHome()
   }
 
