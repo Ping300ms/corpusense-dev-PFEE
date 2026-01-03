@@ -32,7 +32,6 @@ import { FixedSizeGrid as Grid } from 'react-window';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
 import { ICreateChange, IDatabaseChange, IDeleteChange, IUpdateChange } from 'dexie-observable/api';
 import { Annotation } from '@/data/models/Annotation.ts';
-import { db } from '@/data/repositories/indexeddb/db.ts';
 
 interface GridCellProps {
   columnIndex: number;
@@ -100,6 +99,14 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
     }
   }, [canvasToDisplay]);
 
+  useEffect(() => {
+    return DexieObservableListener.subscribe({
+      onAnnotationChanges,
+      onCollectionDetailsChanges,
+      onCollectionContentChanges,
+    });
+  }, []);
+
   const onAnnotationChanges = (changes: IDatabaseChange[]) => {
     const inserted = changes.filter(change => change.type as number === 1) as ICreateChange[];
     appDispatch(addAnnotationsSuccess(inserted.map(change => change.obj as Annotation)));
@@ -126,12 +133,6 @@ const CollectionInspectorContent = ({ collectionId }: { collectionId: string }) 
     if (updated)
       appDispatch(updateCollectionSuccess((updated as IUpdateChange).obj as CollectionDetails));
   };
-
-  new DexieObservableListener(db, {
-    onAnnotationChanges,
-    onCollectionDetailsChanges,
-    onCollectionContentChanges,
-  });
 
   const handleOnResize = (size: { height: number; width: number }) => {
     if (size.width < 200) {

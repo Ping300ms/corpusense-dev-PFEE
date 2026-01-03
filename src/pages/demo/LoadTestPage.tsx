@@ -72,12 +72,11 @@ export default function LoadTestPage() {
 
   useEffect(() => {
     void loadData();
-    new DexieObservableListener(
-      db,
+    return DexieObservableListener.subscribe(
       {
-        onInsertItem: () => loadData(),
-        onUpdateItem: () => loadData(),
-        onDeleteItem: () => loadData(),
+        onInsert: () => loadData(),
+        onUpdate: () => loadData(),
+        onDelete: () => loadData(),
       });
   }, []);
 
@@ -92,22 +91,22 @@ export default function LoadTestPage() {
       <Button onClick={startAndStopTest}>{testRunning ? "Stop Test" : "Start Test"}</Button>
 
       {/* Collections */}
-      <EntitySection title="Collections" data={collections} table="collections" onDelete={handleDelete} linkBase="/test/collection" />
+      <EntitySection title="Collections" data={collections} table="collections" onDelete={handleDelete} />
 
       {/* Collections Contents */}
-      <EntitySection title="Collections Contents" data={collectionContent} table="collectionContents" onDelete={handleDelete} linkBase="/test/collection-content" />
+      <EntitySection title="Collections Contents" data={collectionContent} table="collectionContents" onDelete={handleDelete} />
 
       {/* Annotations */}
-      <EntitySection title="Annotations" data={annotations} table="annotations" onDelete={handleDelete} linkBase="/test/annotation" />
+      <EntitySection title="Annotations" data={annotations} table="annotations" onDelete={handleDelete} />
 
       {/* Data Models */}
-      <EntitySection title="Data Models" data={models} table="models" onDelete={handleDelete} linkBase="/test/model" />
+      <EntitySection title="Data Models" data={models} table="models" onDelete={handleDelete} />
 
     </div>
   );
 }
 
-function EntitySection({ title, data, table, onDelete, linkBase } : { title: string, data: SyncableObject[], table: keyof typeof db, onDelete: (table: keyof typeof db, id: string) => Promise<void>, linkBase: string }) {
+function EntitySection({ title, data, table, onDelete} : { title: string, data: SyncableObject[], table: keyof typeof db, onDelete: (table: keyof typeof db, id: string) => Promise<void> }) {
   return (
     <section className="panel space-y-2">
       <div className="flex justify-between items-center">
@@ -117,6 +116,7 @@ function EntitySection({ title, data, table, onDelete, linkBase } : { title: str
         {data.map((d: SyncableObject) => (
           <li key={d.id} className="flex justify-between py-1">
             <span>{d.id}</span>
+            <button onClick={(): void => void onDelete(table, d.id)}>Delete</button>
           </li>
         ))}
       </ul>

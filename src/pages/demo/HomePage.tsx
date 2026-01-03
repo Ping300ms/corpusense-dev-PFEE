@@ -25,12 +25,11 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadData();
-    new DexieObservableListener(
-      db,
+    return DexieObservableListener.subscribe(
       {
-      onInsertItem: () => loadData(),
-      onUpdateItem: () => loadData(),
-      onDeleteItem: () => loadData(),
+      onInsert: () => loadData(),
+      onUpdate: () => loadData(),
+      onDelete: () => loadData(),
     });
   }, []);
 
@@ -70,7 +69,7 @@ function EntitySection({ title, data, table, onDelete, linkBase } : { title: str
       <ul className="divide-y divide-gray-200">
         {data.map((d: SyncableObject) => (
           <li key={d.id} className="flex justify-between py-1">
-            <span>{d.id} - {d.updated_at}</span>
+            <span>{d.id}</span>
             <div className="flex gap-2">
               <Link to={`${linkBase}/${d.id}`}>
                 <Button size="icon" variant="outline"><Edit3 className="h-4 w-4" /></Button>

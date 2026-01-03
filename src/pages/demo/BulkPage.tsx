@@ -9,8 +9,7 @@ import { CollectionElement } from '@/data/models/CollectionElement.ts';
 import { v4 as uuid } from 'uuid';
 
 export default function BulkPage() {
-  const [collectionContent, setCollectionContent] = useState<CollectionContent[]>([])
-  let dexieListener : DexieObservableListener | null = null;
+  const [collectionContent, setCollectionContent] = useState<CollectionContent[]>([]);
 
   const createCollectionContentObject = () : CollectionContent => {
     return {
@@ -26,24 +25,21 @@ export default function BulkPage() {
 
   useEffect(() => {
     void loadData();
-    if (dexieListener == null) {
-      dexieListener = new DexieObservableListener(
-        db,
-        {
-          onInsertItem: (p) => {
-            void loadData();
-            console.log("added " + p.id)
-          },
-          onUpdateItem: (p) => {
-            void loadData();
-            console.log("updated " + p.id)
-          },
-          onDeleteItem: (p) => {
-            void loadData();
-            console.log("deleted " + p)
-          },
-        });
-    }
+    return DexieObservableListener.subscribe(
+      {
+        onInsert: (p) => {
+          void loadData();
+          console.log("added " + p)
+        },
+        onUpdate: (p) => {
+          void loadData();
+          console.log("updated " + p)
+        },
+        onDelete: (p) => {
+          void loadData();
+          console.log("deleted " + p)
+        },
+      });
   }, []);
 
   const handleDelete = async (table: keyof typeof db) => {
@@ -59,10 +55,6 @@ export default function BulkPage() {
   }
 
   const handleUpdate = async (table: keyof typeof db) => {
-    for (const c of collectionContent) {
-      c.updated_at = new Date().toISOString();
-    }
-    // @ts-expect-error
     await (db[table] as unknown as EntityTable<CollectionContent, 'id'>).bulkUpdate(collectionContent.map((c) => {return { key: c.id, changes : c}}));
   }
 
@@ -82,7 +74,7 @@ export default function BulkPage() {
         <ul className="divide-y divide-gray-200">
           {collectionContent.map((d: CollectionContent) => (
             <li key={d.id} className="flex justify-between py-1">
-              <span>{d.id} - {d.updated_at}</span>
+              <span>{d.id} - {d.content.toString()}</span>
             </li>
           ))}
         </ul>

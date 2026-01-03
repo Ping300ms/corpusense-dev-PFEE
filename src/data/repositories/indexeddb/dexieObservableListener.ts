@@ -6,6 +6,8 @@ import {
 } from 'dexie-observable/api';
 import { SyncableObjectName, SyncableTables } from '@/data/models/Syncable.ts';
 import Dexie from 'dexie';
+import { v4 as uuid } from 'uuid';
+import { db } from '@/data/repositories/indexeddb/db.ts';
 
 export interface OnLocalChangeCallbacks {
   onChange?: (changes: IDatabaseChange[]) => void | Promise<void>;
@@ -22,15 +24,27 @@ export interface OnLocalChangeCallbacks {
   onDelete?: (changes: Map<SyncableObjectName, Map<string, IDeleteChange>>) => void | Promise<void>;
 }
 
-// TODO make it singleton
 export class DexieObservableListener {
-  private callbacks: OnLocalChangeCallbacks;
+  private static instance: DexieObservableListener = new DexieObservableListener(db);
 
-  constructor(db: Dexie, callbacks: OnLocalChangeCallbacks) {
-    this.callbacks = callbacks;
+  private subscribers: Map<string, OnLocalChangeCallbacks> = new Map();
 
+  /*
+  params:
+    - callbacks: object containing all callbacks to subscribe
+  returns:
+    - unsubscribe function
+   */
+  public static subscribe(callback: OnLocalChangeCallbacks): () => void {
+    const id = uuid();
+    this.instance.subscribers.set(id, callback);
+    return () => this.instance.subscribers.delete(id);
+  }
+
+  private constructor(db: Dexie) {
     db.on('changes', (changes) => {
-      void callbacks.onChange?.(changes);
+      for (const callbacksObj of this.subscribers.values())
+        void callbacksObj.onChange?.(changes);
 
       const inserts: Map<SyncableObjectName, Map<string, ICreateChange>> = new Map();
       const updates: Map<SyncableObjectName, Map<string, IUpdateChange>> = new Map();
@@ -61,30 +75,29 @@ export class DexieObservableListener {
         }
       }
 
-      void this.callbacks.onInsert?.(inserts);
-      void this.callbacks.onUpdate?.(updates);
-      void this.callbacks.onDelete?.(deletes);
+      for (const callbacksObj of this.subscribers.values()) void callbacksObj.onInsert?.(inserts);
+      for (const callbacksObj of this.subscribers.values()) void callbacksObj.onUpdate?.(updates);
+      for (const callbacksObj of this.subscribers.values()) void callbacksObj.onDelete?.(deletes);
 
-      if (this.callbacks.onAnnotationChanges !== undefined) {
-        const annotationsChanges = changeByTable.get("annotations");
-        if (annotationsChanges !== undefined)
-          void this.callbacks.onAnnotationChanges(annotationsChanges);
-      }
-      if (this.callbacks.onCollectionDetailsChanges !== undefined) {
-        const collectionsDetailsChanges = changeByTable.get("collections");
-        if (collectionsDetailsChanges !== undefined)
-          void this.callbacks.onCollectionDetailsChanges(collectionsDetailsChanges);
-      }
-      if (this.callbacks.onCollectionContentChanges !== undefined) {
-        const collectionContentChanges = changeByTable.get("collectionContents");
-        if (collectionContentChanges !== undefined)
-          void this.callbacks.onCollectionContentChanges(collectionContentChanges);
-      }
-      if (this.callbacks.onDataModelChanges !== undefined) {
-        const dataModelChanges = changeByTable.get("models");
-        if (dataModelChanges !== undefined)
-          void this.callbacks.onDataModelChanges(dataModelChanges);
-      }
+      const collectionsDetailsChanges = changeByTable.get("collections");
+      if (collectionsDetailsChanges !== undefined)
+        for (const callbacksObj of this.subscribers.values())
+          void callbacksObj.onCollectionDetailsChanges?.(collectionsDetailsChanges);
+
+      const collectionContentChanges = changeByTable.get("collectionContents");
+      if (collectionContentChanges !== undefined)
+        for (const callbacksObj of this.subscribers.values())
+          void callbacksObj.onCollectionContentChanges?.(collectionContentChanges);
+
+      const annotationsChanges = changeByTable.get("annotations");
+      if (annotationsChanges !== undefined)
+        for (const callbacksObj of this.subscribers.values())
+          void callbacksObj.onAnnotationChanges?.(annotationsChanges);
+
+      const dataModelChanges = changeByTable.get("models");
+      if (dataModelChanges !== undefined)
+        for (const callbacksObj of this.subscribers.values())
+          void callbacksObj.onDataModelChanges?.(dataModelChanges);
     });
   }
 }

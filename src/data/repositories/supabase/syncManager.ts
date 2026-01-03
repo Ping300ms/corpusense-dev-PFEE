@@ -39,7 +39,7 @@ export class SyncManager {
   private collectionBackupCache = new Map<string, Backup>(); // collectionId: backup
 
   private realtimeListener: SupabaseRealtimeListener | null = null;
-  private dexieObservableListener: DexieObservableListener | null = null;
+  private dexieChangeUnsubscribe?: () => void;
   private authStateListener: Subscription | null = null;
   private onOnlineCallback = () => void this.realtimeListener?.subscribe();
   private onOfflineCallback = () => void this.realtimeListener?.removeExistingChannel();
@@ -71,8 +71,8 @@ export class SyncManager {
   //region Initialization
   private initializeListeners() {
     // Dexie → Supabase
-    if (this.dexieObservableListener == null)
-      new DexieObservableListener(this.dbToSync, {
+    if (!this.dexieChangeUnsubscribe)
+      this.dexieChangeUnsubscribe = DexieObservableListener.subscribe({
         onInsert: (changes) => this.onLocalInsert(changes),
         onUpdate: (changes) => this.onLocalUpdate(changes),
         onDelete: (changes) => this.onLocalDelete(changes),
@@ -159,9 +159,9 @@ export class SyncManager {
     const { data, error } = await this.client
       .from(this.backupTableName)
       .select<'*', Backup>()
-      .in('object_id', objects_id)
       .eq('object_type', type)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .in('object_id', objects_id);
 
     if (error !== null) return { data: null, error };
 
@@ -1031,8 +1031,7 @@ export class SyncManager {
   }
 
   public async destroy(): Promise<void> {
-    // TODO once dexieObservable is refactor in a singleton, unsubscribe callbacks
-    this.dexieObservableListener = null;
+    this.dexieChangeUnsubscribe?.();
     await this.realtimeListener?.removeExistingChannel();
     this.realtimeListener = null;
     this.authStateListener?.unsubscribe();
