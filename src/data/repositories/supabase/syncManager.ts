@@ -400,8 +400,14 @@ export class SyncManager {
       // Save merge to local
       if (!isEqual(change.newObj, merged)) {
         mergedToSaveInLocal.push(merged);
-        // TODO if CollectionContent update CollectionDetails.contentSize
-        // TODO if Annotation and order change update all Annotations order
+        if (type === 'collectionContents') {
+          const contentSize = (merged as CollectionContent).content.length;
+          await this.dbToSync.collections.update(merged.id, {
+            contentSize,
+          });
+        }
+        // TODO if Annotation order change update all Annotations order
+        // How ?
       }
 
       toPush.push({
