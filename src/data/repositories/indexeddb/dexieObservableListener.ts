@@ -41,8 +41,8 @@ export class DexieObservableListener {
     return () => this.instance.subscribers.delete(id);
   }
 
-  private constructor(db: Dexie) {
-    db.on('changes', (changes) => {
+  private constructor(dbToListen: Dexie) {
+    dbToListen.on('changes', (changes) => {
       for (const callbacksObj of this.subscribers.values())
         void callbacksObj.onChange?.(changes);
 

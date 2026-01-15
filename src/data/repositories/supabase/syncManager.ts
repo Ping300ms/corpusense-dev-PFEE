@@ -199,10 +199,6 @@ export class SyncManager {
             return { data: null, error };
           }
 
-          if (!data || data.length === 0) {
-            break;
-          }
-
           for (const v of data) {
             if (type === 'collections') {
               this.collectionBackupCache.set(v.object_id, v);
@@ -616,7 +612,7 @@ export class SyncManager {
   public async pullUpdates(): Promise<{ error: string } | null> {
     const start = performance.now();
 
-    if (!(await this.getUser())) {
+    if ((await this.getUser()) == null) {
       return { error: `[SELECT] Sync: error not logged in` };
     }
 
@@ -633,7 +629,7 @@ export class SyncManager {
         };
       }
 
-      if (!data || data.length === 0) continue;
+      if (data.length === 0) continue;
 
       const plan = await this.computeSyncPlan(table, data);
       await this.applySyncPlan(table, plan);
@@ -674,7 +670,7 @@ export class SyncManager {
         .range(from, from + PAGE_SIZE - 1);
 
       if (error) return { data: null, error };
-      if (!data || data.length === 0) break;
+      if (data.length === 0) break;
 
       res.push(...data);
 
@@ -694,7 +690,7 @@ export class SyncManager {
     toDelete: string[];
     operations: SyncPendingOperation[];
   }> {
-    const objectIds = remotes.map(r => r.object_id as string);
+    const objectIds = remotes.map(r => r.object_id);
 
     const dbTable = this.dbToSync[table] as EntityTable<SyncableObject, 'id'>;
     const locals = await dbTable.bulkGet(objectIds);
@@ -715,20 +711,20 @@ export class SyncManager {
       const remote = remotes[i];
       const local = locals[i];
 
-      if (remote.deleted_at) {
+      if (remote.deleted_at != null) {
         if (!local) continue;
 
         operations.push({
           id: uuid(),
           type: 'DELETE',
           location: 'DEXIE',
-          object_id: remote.object_id as string,
+          object_id: remote.object_id,
           table,
           date: new Date(),
           old: null,
         });
 
-        toDelete.push(remote.object_id as string);
+        toDelete.push(remote.object_id);
         continue;
       }
 
@@ -737,13 +733,13 @@ export class SyncManager {
           id: uuid(),
           type: 'CREATE',
           location: 'DEXIE',
-          object_id: remote.object_id as string,
+          object_id: remote.object_id,
           table,
           date: new Date(),
           old: null,
         });
 
-        toCreate.push(remote.content as SyncableObject);
+        toCreate.push(remote.content);
         continue;
       }
 
@@ -759,7 +755,7 @@ export class SyncManager {
         old: null,
       });
 
-      toUpdate.push(remote.content as SyncableObject);
+      toUpdate.push(remote.content);
     }
 
     return { toCreate, toUpdate, toDelete, operations };
@@ -770,7 +766,7 @@ export class SyncManager {
     plan: Awaited<ReturnType<typeof this.computeSyncPlan>>,
   ): Promise<void> {
     const dbTable = this.dbToSync[table] as EntityTable<SyncableObject, 'id'>;
-    const tasks: Promise<any>[] = [];
+    const tasks: Promise<string | void>[] = [];
     tasks.push(this.operationDb.pendingOperations.bulkAdd(plan.operations));
     tasks.push(dbTable.bulkDelete(plan.toDelete));
     tasks.push(dbTable.bulkAdd(plan.toCreate));
