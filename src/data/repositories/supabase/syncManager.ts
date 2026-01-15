@@ -38,6 +38,26 @@ export class SyncManager {
   // sharing purpose, no need to have the exact remote version, only ids and owner_ids are useful
   private collectionBackupCache = new Map<string, Backup>(); // collectionId: backup
 
+  // aggregating remote logs to print only once per action
+  private static remoteOperationsLogsTemp: {
+    create: SyncPendingOperation[];
+    update: SyncPendingOperation[];
+    delete: SyncPendingOperation[];
+  } = {
+    create: [],
+    update: [],
+    delete: [],
+  };
+  private static remoteOperationsLogsTasks: {
+    create: NodeJS.Timeout | null;
+    update: NodeJS.Timeout | null;
+    delete: NodeJS.Timeout | null;
+  } = {
+    create: null,
+    update: null,
+    delete: null,
+  };
+
   private realtimeListener: SupabaseRealtimeListener | null = null;
   private dexieObservableListener: DexieObservableListener | null = null;
   private authStateListener: Subscription | null = null;
@@ -244,7 +264,8 @@ export class SyncManager {
 
     const { error } = await this.client.from(this.backupTableName).insert<Backup>(toInsert);
 
-    if (error?.code === '23505') await this.removePendingOperations(op);
+    // exception when trying to insert a duplicate key or already existing row
+    if (error?.code === '23505') await this.removePendingOperations(op, false);
     else if (error !== null)
       this.remoteRequestErrorHandler(
         objects.map((o) => o.id),
@@ -364,15 +385,16 @@ export class SyncManager {
       });
     }
 
-    if (operationToDelete.length > 1) await this.removePendingOperations(operationToDelete);
-    if (operationToDelete.length > 1) await this.create(toCreate, type);
+    if (operationToDelete.length > 0) await this.removePendingOperations(operationToDelete, false);
+    if (toCreate.length > 0) await this.create(toCreate, type);
+    if (toPush.length == 0) return;
 
     const { error } = await this.client
       .from(this.backupTableName)
       .upsert<Backup>(toPush, { onConflict: 'owner_id,object_type,object_id' });
 
     if (error != null) this.remoteRequestErrorHandler(objects_id, 'UPDATE', error);
-    else {
+    else if (mergedToSaveInLocal.length > 0) {
       const table = this.dbToSync[type as keyof typeof this.dbToSync] as EntityTable<
         SyncableObject,
         'id'
@@ -771,9 +793,9 @@ export class SyncManager {
     return toPut;
   }
 
-  private async removePendingOperations(operations: SyncPendingOperation[]) {
+  private async removePendingOperations(operations: SyncPendingOperation[], log = true) {
     await this.operationDb.pendingOperations.bulkDelete(operations.map((o) => o.id));
-    this.logTime(operations);
+    if (log) SyncManager.logTime(operations);
   }
 
   //endregion
@@ -873,7 +895,7 @@ export class SyncManager {
 
   private async applyRemoteChange(backup: Backup): Promise<{ error: DexieError | null }> {
     if (backup.deleted_at != null) {
-      // remote has been soft deleted
+      // remote has been softly deleted
       return await this.applyRemoteDelete(backup);
     }
 
@@ -997,20 +1019,50 @@ export class SyncManager {
   //endregion
 
   // log time between now and SyncPendinOperations that have been completed
-  private logTime(operations: SyncPendingOperation[]) {
+  private static logTime(operations: SyncPendingOperation[]) {
     if (operations.length === 0) return;
+
     const now = new Date();
+
+    if (operations.length == 1 && operations[0].location === 'SUPABASE') {
+      // TODO aggregate operations logs
+      const op = operations[0];
+      switch (op.type) {
+        case 'CREATE':
+          SyncManager.remoteOperationsLogsTemp.create.push(op);
+          if (SyncManager.remoteOperationsLogsTasks.create == null)
+            SyncManager.remoteOperationsLogsTasks.create = setTimeout(() => {
+              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.create);
+              SyncManager.remoteOperationsLogsTemp.create = [];
+              SyncManager.remoteOperationsLogsTasks.create = null;
+            }, 20000);
+          break;
+        case 'UPDATE':
+          SyncManager.remoteOperationsLogsTemp.update.push(op);
+          if (SyncManager.remoteOperationsLogsTasks.update == null)
+            SyncManager.remoteOperationsLogsTasks.update = setTimeout(() => {
+              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.update);
+              SyncManager.remoteOperationsLogsTemp.update = [];
+              SyncManager.remoteOperationsLogsTasks.update = null;
+            }, 20000);
+          break;
+        case 'DELETE':
+          SyncManager.remoteOperationsLogsTemp.delete.push(op);
+          if (SyncManager.remoteOperationsLogsTasks.delete == null)
+            SyncManager.remoteOperationsLogsTasks.delete = setTimeout(() => {
+              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.delete);
+              SyncManager.remoteOperationsLogsTemp.delete = [];
+              SyncManager.remoteOperationsLogsTasks.delete = null;
+            }, 20000);
+          break;
+      }
+      return;
+    }
+
     const durationArray: number[] = [];
     for (const operation of operations) {
       const duration = now.getTime() - operation.date.getTime();
       durationArray.push(duration);
-    }
-    if (operations.length < 2) {
-      const operation = operations[0];
-      console.log(
-        `Operations ${operation.type} on ${operation.table} duration results: ${now.getTime() - operation.date.getTime()}ms`,
-      );
-      return;
     }
     console.log(`${operations[0].table} ${operations[0].type} on ${operations[0].location} duration results:
     - Average: ${durationArray.reduce((a, b) => a + b) / durationArray.length}
