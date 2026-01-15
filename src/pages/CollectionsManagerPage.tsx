@@ -2,22 +2,16 @@ import { useAlertDialogContext } from '@/components/reducers/useAlertDialogConte
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CollectionDetails } from '@/data/models/Collection';
 import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import useDialog from '@/hooks/ui/useDialog';
 import useAppNavigation from '@/hooks/useAppNavigation';
 import {
   createCollectionSuccess,
-  removeCollectionRequest, removeCollectionSuccess, updateCollectionSuccess,
+  removeCollectionRequest,
+  removeCollectionSuccess,
+  updateCollectionSuccess,
 } from '@/state/reducers/collections';
 import { selectCollections } from '@/state/selectors/collections';
 import { selectTagsByIds } from '@/state/selectors/tags';
@@ -25,7 +19,6 @@ import { DownloadIcon, FilePlus, Import, Trash2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DexieObservableListener } from '@/data/repositories/indexeddb/dexieObservableListener.ts';
-import { db } from '@/data/repositories/indexeddb/db.ts';
 import { ICreateChange, IDatabaseChange, IUpdateChange } from 'dexie-observable/api';
 
 const CollectionTableRow = ({
@@ -146,23 +139,25 @@ const CollectionsManagerPage = () => {
 
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
 
-  new DexieObservableListener(db, {
-    onCollectionDetailsChanges: (changes: IDatabaseChange[]) => {
-      for (const change of changes) {
-        switch (change.type as number) {
-          case 1:
-            dispatch(createCollectionSuccess((change as ICreateChange).obj as CollectionDetails));
-            break;
-          case 2:
-            dispatch(updateCollectionSuccess((change as IUpdateChange).obj as CollectionDetails));
-            break;
-          case 3:
-            dispatch(removeCollectionSuccess(change.key as string));
-            break;
+  useEffect(() => {
+    return DexieObservableListener.subscribe({
+      onCollectionDetailsChanges: (changes: IDatabaseChange[]) => {
+        for (const change of changes) {
+          switch (change.type as number) {
+            case 1:
+              dispatch(createCollectionSuccess((change as ICreateChange).obj as CollectionDetails));
+              break;
+            case 2:
+              dispatch(updateCollectionSuccess((change as IUpdateChange).obj as CollectionDetails));
+              break;
+            case 3:
+              dispatch(removeCollectionSuccess(change.key as string));
+              break;
+          }
         }
-      }
-    }
-  });
+      },
+    });
+  }, []);
 
   const addOrRemoveCollection = (id: string, isAdd: boolean) => {
     if (isAdd) {

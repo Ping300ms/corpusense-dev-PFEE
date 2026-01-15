@@ -24,6 +24,9 @@ import { DataModel } from '@/data/models/DataModel.ts';
 import { isEqual } from 'lodash';
 import { ICreateChange, IDatabaseChange, IDeleteChange, IUpdateChange } from 'dexie-observable/api';
 
+const PAGE_SIZE = 1000;
+const IN_CHUNK_SIZE = 500;
+
 export class SyncManager {
   private static instance: SyncManager | null = null;
   //region Variables
@@ -59,7 +62,7 @@ export class SyncManager {
   };
 
   private realtimeListener: SupabaseRealtimeListener | null = null;
-  private dexieObservableListener: DexieObservableListener | null = null;
+  private dexieChangeUnsubscribe?: () => void;
   private authStateListener: Subscription | null = null;
   private onOnlineCallback = () => void this.realtimeListener?.subscribe();
   private onOfflineCallback = () => void this.realtimeListener?.removeExistingChannel();
@@ -91,8 +94,8 @@ export class SyncManager {
   //region Initialization
   private initializeListeners() {
     // Dexie → Supabase
-    if (this.dexieObservableListener == null)
-      new DexieObservableListener(this.dbToSync, {
+    if (!this.dexieChangeUnsubscribe)
+      this.dexieChangeUnsubscribe = DexieObservableListener.subscribe({
         onInsert: (changes) => this.onLocalInsert(changes),
         onUpdate: (changes) => this.onLocalUpdate(changes),
         onDelete: (changes) => this.onLocalDelete(changes),
@@ -163,34 +166,84 @@ export class SyncManager {
     return { data, error: null };
   }
 
-  // FIXME pagination 1000 max
-  // FIXME read on non-existing rows returns 400
   public async readMultiple(
     objects_id: string[],
     type: SyncableObjectName,
   ): Promise<
     | { data: null; error: PostgrestError }
-    | {
-        data: Map<string, Backup>; // key: object_id
-        error: null;
-      }
+    | { data: Map<string, Backup>; error: null }
   > {
-    if (objects_id.length === 0) return { data: new Map(), error: null };
-    const { data, error } = await this.client
-      .from(this.backupTableName)
-      .select<'*', Backup>()
-      .in('object_id', objects_id)
-      .eq('object_type', type)
-      .is('deleted_at', null);
+    if (objects_id.length === 0) {
+      return { data: new Map(), error: null };
+    }
 
-    if (error !== null) return { data: null, error };
+    const result = new Map<string, Backup>();
+    const idChunks = this.chunkArray(objects_id, IN_CHUNK_SIZE);
 
-    const res = new Map<string, Backup>();
-    data.forEach((v) => {
-      if (type === 'collections') this.collectionBackupCache.set(v.object_id, v);
-      res.set(v.object_id, v);
-    });
-    return { data: res, error: null };
+    try {
+      for (const ids of idChunks) {
+        let from = 0;
+
+        while (true) {
+          const to = from + PAGE_SIZE - 1;
+
+          const { data, error } = await this.client
+            .from(this.backupTableName)
+            .select<'*', Backup>()
+            .eq('object_type', type)
+            .is('deleted_at', null)
+            .in('object_id', ids)
+            .range(from, to);
+
+          if (error) {
+            return { data: null, error };
+          }
+
+          if (!data || data.length === 0) {
+            break;
+          }
+
+          for (const v of data) {
+            if (type === 'collections') {
+              this.collectionBackupCache.set(v.object_id, v);
+            }
+            result.set(v.object_id, v);
+          }
+
+          // Dernière page atteinte
+          if (data.length < PAGE_SIZE) {
+            break;
+          }
+
+          from += PAGE_SIZE;
+        }
+      }
+
+      return { data: result, error: null };
+    } catch (e) {
+      if (e instanceof PostgrestError) {
+        return { data: null, error: e };
+      }
+
+      return {
+        data: null,
+        error: new PostgrestError({
+          message: 'unknown error',
+          details: '',
+          hint: '',
+          code: '',
+        }),
+      };
+    }
+  }
+
+
+  private chunkArray<T>(arr: T[], size: number): T[][] {
+    const res: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      res.push(arr.slice(i, i + size));
+    }
+    return res;
   }
 
   private async getPartOf(
@@ -368,8 +421,14 @@ export class SyncManager {
       // Save merge to local
       if (!isEqual(change.newObj, merged)) {
         mergedToSaveInLocal.push(merged);
-        // TODO if CollectionContent update CollectionDetails.contentSize
-        // TODO if Annotation and order change update all Annotations order
+        if (type === 'collectionContents') {
+          const contentSize = (merged as CollectionContent).content.length;
+          await this.dbToSync.collections.update(merged.id, {
+            contentSize,
+          });
+        }
+        // TODO if Annotation order change update all Annotations order
+        // How ?
       }
 
       toPush.push({
@@ -419,10 +478,8 @@ export class SyncManager {
       }
     >();
 
-    // TODO check pagination
     await this.operationDb.pendingOperations.orderBy('date').each((op) => {
       if (op.location !== 'SUPABASE') return;
-      operationsCount++;
       const operations = operationsMap.get(op.table);
       if (operations == undefined)
         operationsMap.set(op.table, {
@@ -451,61 +508,80 @@ export class SyncManager {
       const operations = operationsMap.get(table);
       if (operations == undefined) continue;
 
+      const tasks: Promise<void>[] = [];
+
       if (operations.insert.length > 0) {
         operationsCount += operations.insert.length;
-        const { objects, validOperations } = await this.chekValidOperations(
-          operations.insert,
-          table,
-        );
-        console.log('test', objects);
-        await this.create(objects, table, validOperations);
+        tasks.push(this.replayInsert(operations.insert, table));
       }
 
       if (operations.update.length > 0) {
         operationsCount += operations.update.length;
-        const { objects, validOperations } = await this.chekValidOperations(
-          operations.update,
-          table,
-        );
-        await this.push(
-          operations.update.map((op, index) => {
-            if (op.old == null) throw Error('Old version missing');
-            return { newObj: objects[index], oldObj: op.old };
-          }),
-          table,
-          validOperations,
-        );
+        tasks.push(this.replayUpdate(operations.update, table));
       }
 
       if (operations.delete.length > 0) {
         operationsCount += operations.delete.length;
-        const operationsId: string[] = operations.delete.map((op) => op.id);
-        const remotes = await this.readMultiple(operationsId, table);
-
-        if (remotes.error)
-          return this.remoteRequestErrorHandler(operationsId, 'GET', remotes.error);
-
-        const validOperations: SyncPendingOperation[] = [];
-        const idsToDelete: string[] = [];
-        const operationsIdToRemove: string[] = [];
-
-        for (const operation of operations.delete) {
-          const backup = remotes.data.get(operation.object_id);
-          if (backup == undefined) operationsIdToRemove.push(operation.id);
-          else {
-            validOperations.push(operation);
-            idsToDelete.push(operation.object_id);
-          }
-        }
-
-        void this.operationDb.pendingOperations.bulkDelete(operationsIdToRemove);
-        await this.delete(idsToDelete, table, validOperations);
+        tasks.push(this.replayDelete(operations.delete, table));
       }
+
+      await Promise.all(tasks);
     }
 
     console.log(
-      `[SyncManager] Replaying operations finished in ${performance.now() - start}ms for ${operationsCount} operations`,
+      `[SyncManager] Replaying operations finished in ${(performance.now() - start).toFixed(2)}ms for ${operationsCount} operations`,
     );
+  }
+
+  private async replayInsert(insertOperation: SyncPendingOperation[], table: SyncableObjectName) {
+    const { objects, validOperations } = await this.chekValidOperations(
+      insertOperation,
+      table,
+    );
+    await this.create(objects, table, validOperations);
+  }
+
+  private async replayUpdate(updateOperations: SyncPendingOperation[], table: SyncableObjectName): Promise<void> {
+    const { objects, validOperations } = await this.chekValidOperations(
+      updateOperations,
+      table,
+    );
+    await this.push(
+      updateOperations.map((op, index) => {
+        if (op.old == null) throw Error('Old version missing');
+        return { newObj: objects[index], oldObj: op.old };
+      }),
+      table,
+      validOperations,
+    );
+  }
+
+  private async replayDelete(deleteOperations: SyncPendingOperation[], table: SyncableObjectName) {
+    const operationsId: string[] = deleteOperations.map((op) => op.id);
+    const remotes = await this.readMultiple(operationsId, table);
+
+    if (remotes.error) {
+      // FIXME weird error 401 on read, maybe due to uuid format
+      if (remotes.error.code === "Bad Request")
+        await this.operationDb.pendingOperations.bulkDelete(operationsId);
+      return this.remoteRequestErrorHandler(operationsId, 'GET', remotes.error);
+    }
+
+    const validOperations: SyncPendingOperation[] = [];
+    const idsToDelete: string[] = [];
+    const operationsIdToRemove: string[] = [];
+
+    for (const operation of deleteOperations) {
+      const backup = remotes.data.get(operation.object_id);
+      if (backup == undefined) operationsIdToRemove.push(operation.id);
+      else {
+        validOperations.push(operation);
+        idsToDelete.push(operation.object_id);
+      }
+    }
+
+    await this.delete(idsToDelete, table, validOperations);
+    await this.operationDb.pendingOperations.bulkDelete(operationsIdToRemove);
   }
 
   private async chekValidOperations(
@@ -540,118 +616,167 @@ export class SyncManager {
   public async pullUpdates(): Promise<{ error: string } | null> {
     const start = performance.now();
 
-    const user = await this.getUser();
-    if (user == null) {
-      console.log(`[⏱️ SyncManager] pullUpdates aborted (not logged in)`);
+    if (!(await this.getUser())) {
       return { error: `[SELECT] Sync: error not logged in` };
     }
 
     const requestDate = new Date();
+    const since = this.lastPull?.toISOString() ?? this.defaultPullDate;
+    let operationCount = 0;
 
     for (const table of SyncableTables) {
-      // FIXME pagination to pull over read limit 1000
-      const { data: remotes, error } = await this.client
-        .from(this.backupTableName)
-        .select('object_id, content, updated_at, deleted_at')
-        .eq('object_type', table)
-        .gt('updated_at', this.lastPull?.toISOString() ?? this.defaultPullDate)
-        .order('updated_at', { ascending: true });
-
+      const { data, error } = await this.fetchRemoteUpdates(table, since);
       if (error) {
         this.remoteRequestErrorHandler([], 'GET', error);
-        console.log(
-          `[⏱️ SyncManager] pullUpdates(${String(table)}) failed in ${(performance.now() - start).toFixed(2)} ms`,
-        );
         return {
           error: `[PULL] Sync: error pulling from Supabase ${table} updates ${error.message}`,
         };
       }
 
-      if (remotes == null || remotes.length === 0) {
-        console.log(
-          `[⏱️ SyncManager] pullUpdates(${String(table)}) completed (no updates) in ${(performance.now() - start).toFixed(2)} ms`,
-        );
-        return null;
-      }
+      if (!data || data.length === 0) continue;
 
-      const objectIds: string[] = remotes.map<string>((backup) => backup.object_id as string);
+      const plan = await this.computeSyncPlan(table, data);
+      await this.applySyncPlan(table, plan);
 
-      const dbTable = this.dbToSync[table] as unknown as EntityTable<SyncableObject, 'id'>;
-      const locals = await dbTable.bulkGet(objectIds);
-      const pendingUpdates = await this.getPendingOperations(
-        'UPDATE',
-        'SUPABASE',
-        table,
-        locals.filter((l) => l !== undefined).map((l) => l.id),
+      console.log(
+        `[⏱️ SyncManager] pull ${table} updates completed (${data.length} changes)`,
       );
-
-      const toCreate: SyncableObject[] = [];
-      const toUpdate: SyncableObject[] = [];
-      const toDelete: string[] = [];
-      const syncOperations: SyncPendingOperation[] = [];
-
-      for (let i = 0; i < remotes.length; i++) {
-        const remote = remotes[i];
-        const local = locals[i];
-
-        if (remote.deleted_at != null) {
-          if (!local) continue;
-          syncOperations.push({
-            id: uuid(),
-            type: 'DELETE',
-            location: 'DEXIE',
-            object_id: remote.object_id as string,
-            table,
-            date: new Date(),
-            old: null,
-          });
-          toDelete.push(remote.object_id as string);
-          continue;
-        }
-
-        if (!local) {
-          syncOperations.push({
-            id: uuid(),
-            type: 'CREATE',
-            location: 'DEXIE',
-            object_id: remote.object_id as string,
-            table: table,
-            date: new Date(),
-            old: null,
-          });
-          toCreate.push(remote.content as SyncableObject);
-          continue;
-        }
-
-        if (pendingUpdates.get(local.id) != undefined) continue; // replay pending will be in charge of the merge
-
-        syncOperations.push({
-          id: uuid(),
-          type: 'UPDATE',
-          location: 'DEXIE',
-          object_id: local.id,
-          table: table,
-          date: new Date(),
-          old: null,
-        });
-        toUpdate.push(remote.content as SyncableObject);
-      }
-
-      await this.operationDb.pendingOperations.bulkAdd(syncOperations);
-      await dbTable.bulkDelete(toDelete);
-      await dbTable.bulkAdd(toCreate);
-      await dbTable.bulkPut(toUpdate);
-
-      console.log(`[⏱️ SyncManager] pull ${table} updates completed (${remotes.length} changes)`);
+      operationCount += data.length;
     }
 
     localStorage.setItem(`${this.userId}-lastPull`, requestDate.toString());
     this.lastPull = requestDate;
 
-    const duration = performance.now() - start;
-    console.log(`[⏱️ SyncManager] pullUpdates completed in ${duration.toFixed(2)} ms`);
+    console.log(
+      `[⏱️ SyncManager] pullUpdates completed in ${(performance.now() - start).toFixed(2)}ms for ${operationCount} operations`,
+    );
 
     return null;
+  }
+
+  private async fetchRemoteUpdates(
+    table: SyncableObjectName,
+    since: string,
+  ): Promise<
+    { data: Pick<Backup, 'object_id' | 'content' | 'deleted_at'>[]; error: null }
+    | { data: null; error: PostgrestError }
+  > {
+    const res: Pick<Backup, 'object_id' | 'content' | 'deleted_at'>[] = [];
+    let from = 0;
+
+    while (true) {
+      const { data, error } = await this.client
+        .from(this.backupTableName)
+        .select('object_id, content, updated_at, deleted_at')
+        .eq('object_type', table)
+        .gt('updated_at', since)
+        .order('updated_at', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) return { data: null, error };
+      if (!data || data.length === 0) break;
+
+      res.push(...data);
+
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    return { data: res, error: null };
+  }
+
+  private async computeSyncPlan(
+    table: SyncableObjectName,
+    remotes: Pick<Backup, 'object_id' | 'content' | 'deleted_at'>[],
+  ): Promise<{
+    toCreate: SyncableObject[];
+    toUpdate: SyncableObject[];
+    toDelete: string[];
+    operations: SyncPendingOperation[];
+  }> {
+    const objectIds = remotes.map(r => r.object_id as string);
+
+    const dbTable = this.dbToSync[table] as EntityTable<SyncableObject, 'id'>;
+    const locals = await dbTable.bulkGet(objectIds);
+
+    const pendingUpdates = await this.getPendingOperations(
+      'UPDATE',
+      'SUPABASE',
+      table,
+      locals.filter(Boolean).map(l => l!.id),
+    );
+
+    const toCreate: SyncableObject[] = [];
+    const toUpdate: SyncableObject[] = [];
+    const toDelete: string[] = [];
+    const operations: SyncPendingOperation[] = [];
+
+    for (let i = 0; i < remotes.length; i++) {
+      const remote = remotes[i];
+      const local = locals[i];
+
+      if (remote.deleted_at) {
+        if (!local) continue;
+
+        operations.push({
+          id: uuid(),
+          type: 'DELETE',
+          location: 'DEXIE',
+          object_id: remote.object_id as string,
+          table,
+          date: new Date(),
+          old: null,
+        });
+
+        toDelete.push(remote.object_id as string);
+        continue;
+      }
+
+      if (!local) {
+        operations.push({
+          id: uuid(),
+          type: 'CREATE',
+          location: 'DEXIE',
+          object_id: remote.object_id as string,
+          table,
+          date: new Date(),
+          old: null,
+        });
+
+        toCreate.push(remote.content as SyncableObject);
+        continue;
+      }
+
+      if (pendingUpdates.has(local.id)) continue; // replay pending will be in charge of the merge
+
+      operations.push({
+        id: uuid(),
+        type: 'UPDATE',
+        location: 'DEXIE',
+        object_id: local.id,
+        table,
+        date: new Date(),
+        old: null,
+      });
+
+      toUpdate.push(remote.content as SyncableObject);
+    }
+
+    return { toCreate, toUpdate, toDelete, operations };
+  }
+
+  private async applySyncPlan(
+    table: SyncableObjectName,
+    plan: Awaited<ReturnType<typeof this.computeSyncPlan>>,
+  ): Promise<void> {
+    const dbTable = this.dbToSync[table] as EntityTable<SyncableObject, 'id'>;
+    const tasks: Promise<any>[] = [];
+    tasks.push(this.operationDb.pendingOperations.bulkAdd(plan.operations));
+    tasks.push(dbTable.bulkDelete(plan.toDelete));
+    tasks.push(dbTable.bulkAdd(plan.toCreate));
+    tasks.push(dbTable.bulkPut(plan.toUpdate));
+
+    await Promise.all(tasks);
   }
   //endregion
 
@@ -969,11 +1094,12 @@ export class SyncManager {
 
   //region Auth handlers
 
-  // TODO maybe purge/redo DEXIE operations at start
   private async onSignedIn() {
+    // purge DEXIE operations at start
+    await this.operationDb.pendingOperations.where('location').equals('DEXIE').delete();
     await this.realtimeListener?.subscribe();
     const userId = await this.getUser();
-    if (userId == null) return; // not supposed to happen
+    if (userId == null) return; // not supposed to happen (but happens sometimes... race condition)
     const lastPull = localStorage.getItem(`${userId}-lastPull`);
     if (lastPull !== null) this.lastPull = new Date(lastPull);
   }
@@ -1078,13 +1204,12 @@ export class SyncManager {
 
   private async getUser(): Promise<string | null> {
     if (this.userId == null) this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
-    if (this.userId == null) console.warn('User not logged in');
+    // if (this.userId == null) console.debug('User not logged in');
     return this.userId;
   }
 
   public async destroy(): Promise<void> {
-    // TODO once dexieObservable is refactor in a singleton, unsubscribe callbacks
-    this.dexieObservableListener = null;
+    this.dexieChangeUnsubscribe?.();
     await this.realtimeListener?.removeExistingChannel();
     this.realtimeListener = null;
     this.authStateListener?.unsubscribe();
