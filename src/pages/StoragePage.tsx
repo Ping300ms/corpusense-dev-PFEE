@@ -14,6 +14,7 @@ import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
 import { Loader, Lock, LockOpen, Share2 } from 'lucide-react';
+import useDialog from '@/hooks/ui/useDialog.tsx';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -79,6 +80,9 @@ const StoragePage = () => {
   const [progressRenderPDFToImages, setProgressRenderPDFToImages] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
   const [userManifests, setUserManifests] = useState<ManifestData[]>([]);
+  const { openShareManifestDialog } = useDialog();
+
+
 
   useEffect(() => {
     void (async () => {
@@ -324,6 +328,7 @@ const StoragePage = () => {
                   Chargement
                 </Button>
               ) : data.isPrivate ? (
+                <div className="flex gap-2">
                 <Button
                   className="text-red-500 bg-red-200 cursor-pointer"
                   onClick={() => changeBucket(data.name, data.isPrivate)}
@@ -331,6 +336,11 @@ const StoragePage = () => {
                   <Lock />
                   Privé
                 </Button>
+                  <Button onClick={() => openShareManifestDialog("/" + userId + "/" + data.name)}>
+                    <Share2 />
+                    Partager
+                  </Button>
+                </div>
               ) : (
                 <Button
                   className="text-green-500 bg-green-200 cursor-pointer"
@@ -340,10 +350,6 @@ const StoragePage = () => {
                   Public
                 </Button>
               )}
-                <Button>
-                  <Share2 />
-                  Partager
-                </Button>
               </div>
             </div>
           ))
