@@ -1,5 +1,4 @@
 import { Canvas, IIIFExternalWebResource } from '@iiif/presentation-3';
-import { Thumbnail } from '@samvera/clover-iiif/primitives';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,7 +19,7 @@ import {
   createCollectionWithSelectionRequest,
 } from '@/state/reducers/collections';
 import { selectCollections } from '@/state/selectors/collections';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { Button } from './ui/button';
@@ -34,6 +33,8 @@ import {
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { AuthenticatedThumbnail } from './AuthenticatedThumbnail';
+import { supabase } from '@/utils/config';
 
 interface CanvasCardProps {
   index: number;
@@ -57,6 +58,7 @@ const CanvasCard = ({
   const { t } = useTranslation();
   const appDispatch = useAppDispatch();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const collections: CollectionDetails[] = useAppSelector(selectCollections);
   const {
     isSelected,
@@ -71,6 +73,21 @@ const CanvasCard = ({
   const thumbnail = (canvas.thumbnail as IIIFExternalWebResource[]) ?? [
     getImageForThumbnail(canvas, 200),
   ];
+
+  // Récupérer le token pour authentifier les requêtes aux images privées
+  useEffect(() => {
+    const getToken = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setAuthToken(session.access_token);
+        }
+      } catch (err) {
+        console.warn('Error getting auth token:', err);
+      }
+    };
+    void getToken();
+  }, []);
 
   //! mieux gérer le cas où canvas est undefined
   if (canvas === undefined) {
@@ -150,8 +167,9 @@ const CanvasCard = ({
               <div className='w-fit flex-1'>
                 <AutoSizer disableWidth>
                   {({ height }) => (
-                    <Thumbnail
+                    <AuthenticatedThumbnail
                       thumbnail={thumbnail}
+                      token={authToken}
                       style={{ width: 'auto', height: `${height}px`, objectFit: 'contain' }}
                       aria-label='canvas thumbnail'
                       draggable={false}

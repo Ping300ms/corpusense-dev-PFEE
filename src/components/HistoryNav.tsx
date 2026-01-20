@@ -3,9 +3,10 @@ import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
 import { removeFromHistoryRequest } from '@/state/reducers/manifests';
 import { selectHistory } from '@/state/selectors/manifests';
 import { IIIFExternalWebResource } from '@iiif/presentation-3';
-import { Thumbnail } from '@samvera/clover-iiif/primitives';
+import { useEffect, useState, useMemo } from 'react';
+import { AuthenticatedThumbnail } from './AuthenticatedThumbnail';
+import { supabase } from '@/utils/config';
 import { CircleX, FileImage } from 'lucide-react';
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -13,19 +14,36 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 const Item = ({ item }: { item: StoredManifestDetails }) => {
   const dispatch = useAppDispatch();
   const { t } = useTranslation();
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  // Récupérer le token pour authentifier les requêtes aux images privées
+  useEffect(() => {
+    const getToken = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setAuthToken(session.access_token);
+        }
+      } catch (err) {
+        console.warn('Error getting auth token:', err);
+      }
+    };
+    void getToken();
+  }, []);
 
   const thumbnail = useMemo(() => {
     if (item.thumbnail !== undefined) {
       return (
-        <Thumbnail
+        <AuthenticatedThumbnail
           thumbnail={[item.thumbnail] as IIIFExternalWebResource[]}
+          token={authToken}
           style={{ width: '48px', height: '48px', objectFit: 'contain' }}
           aria-label='thumbnail'
         />
       );
     }
     return <FileImage size={48} />;
-  }, [item]);
+  }, [item, authToken]);
 
   const handleDelete = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
     event.stopPropagation();
