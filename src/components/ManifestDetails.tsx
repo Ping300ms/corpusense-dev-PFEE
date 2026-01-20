@@ -5,17 +5,36 @@ import {
   Manifest,
   MetadataItem,
 } from '@iiif/presentation-3';
-import { Label, Metadata, Summary, Thumbnail } from '@samvera/clover-iiif/primitives';
+import { Label, Metadata, Summary } from '@samvera/clover-iiif/primitives';
 import { useTranslation } from 'react-i18next';
+import { useEffect, useState } from 'react';
 import './metadata.css';
 import MetadataTable from './MetadataTable';
 import { ScrollArea, ScrollBar } from './ui/scroll-area';
+import { AuthenticatedThumbnail } from './AuthenticatedThumbnail';
+import { supabase } from '@/utils/config';
 
 const ManifestDetails = ({ manifest }: { manifest: Manifest }) => {
   const { t } = useTranslation();
   const { experimentalFeaturesActivated } = useExperimental();
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
   const thumbnail = manifest.thumbnail as IIIFExternalWebResource[] | undefined;
+
+  // Récupérer le token pour authentifier les requêtes aux images privées
+  useEffect(() => {
+    const getToken = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setAuthToken(session.access_token);
+        }
+      } catch (err) {
+        console.warn('Error getting auth token:', err);
+      }
+    };
+    void getToken();
+  }, []);
 
   return (
     <section
@@ -28,7 +47,7 @@ const ManifestDetails = ({ manifest }: { manifest: Manifest }) => {
           className='text-center text-lg font-bold'
           summary={manifest.summary as InternationalString}
         />
-        {thumbnail !== undefined && <Thumbnail thumbnail={thumbnail} />}
+        {thumbnail !== undefined && <AuthenticatedThumbnail thumbnail={thumbnail} token={authToken} />}
         <Label label={manifest.label ?? { none: [''] }} as='h3' className='text-center' />
         <h4 className='w-full text-sm font-bold break-words'>{manifest.id}</h4>
         <section className='w-full rounded-md border p-2' aria-labelledby='metadata_gallica'>

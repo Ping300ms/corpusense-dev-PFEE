@@ -7,7 +7,9 @@ import {
   selectLoadedCanvasById,
 } from '@/state/selectors/collections';
 import { Canvas, IIIFExternalWebResource } from '@iiif/presentation-3';
-import { Thumbnail } from '@samvera/clover-iiif/primitives';
+import { useEffect, useState } from 'react';
+import { AuthenticatedThumbnail } from './AuthenticatedThumbnail';
+import { supabase } from '@/utils/config';
 import 'gridstack/dist/gridstack.min.css';
 import { CircleX, SpellCheck, SpellCheck2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -30,11 +32,27 @@ const GridThumb = ({
 }) => {
   const dispatch = useAppDispatch();
   const { t } = useTranslation();
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const canvas = useAppSelector((state) => selectLoadedCanvasById(state, canvasId));
   const idDisplayed = canvasToDisplay?.id === canvas?.id;
   const hasLineAnnotations = useAppSelector((state) =>
     selectCanvasHasOcrAnnotations(state, canvasId),
   );
+
+  // Récupérer le token pour authentifier les requêtes aux images privées
+  useEffect(() => {
+    const getToken = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setAuthToken(session.access_token);
+        }
+      } catch (err) {
+        console.warn('Error getting auth token:', err);
+      }
+    };
+    void getToken();
+  }, []);
 
   const handleDelete = (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     event.stopPropagation();
@@ -85,8 +103,9 @@ const GridThumb = ({
       <div className='w-fit flex-1'>
         <AutoSizer disableWidth>
           {({ height }) => (
-            <Thumbnail
+            <AuthenticatedThumbnail
               thumbnail={thumbnail}
+              token={authToken}
               style={{ width: 'auto', height: `${height}px`, objectFit: 'contain' }}
               aria-label='canvas thumbnail'
             />
