@@ -42,10 +42,10 @@ export class SyncManager {
   private collectionBackupCache = new Map<string, Backup>(); // collectionId: backup
 
   // aggregating remote logs to print only once per action
-  private static remoteOperationsLogsTemp: {
-    create: SyncPendingOperation[];
-    update: SyncPendingOperation[];
-    delete: SyncPendingOperation[];
+  private static remoteOperationsLogsTime: {
+    create: number[];
+    update: number[];
+    delete: number[];
   } = {
     create: [],
     update: [],
@@ -916,7 +916,10 @@ export class SyncManager {
 
   private async removePendingOperations(operations: SyncPendingOperation[], log = true) {
     await this.operationDb.pendingOperations.bulkDelete(operations.map((o) => o.id));
-    if (log) SyncManager.logTime(operations);
+    if (!log || operations.length == 0) return;
+    if (operations[0].location === 'DEXIE') SyncManager.logLocalOperationTime(operations);
+    // remote operations are treated only one by one
+    else SyncManager.logRemoteOperationTime(operations[0]);
   }
 
   //endregion
@@ -1140,56 +1143,76 @@ export class SyncManager {
   }
   //endregion
 
+  private static logRemoteOperationTime(op: SyncPendingOperation) {
+    const duration = new Date().getTime() - op.date.getTime();
+    switch (op.type) {
+      case 'CREATE':
+        SyncManager.remoteOperationsLogsTime.create.push(duration);
+        if (SyncManager.remoteOperationsLogsTasks.create == null)
+          SyncManager.remoteOperationsLogsTasks.create = setTimeout(() => {
+            SyncManager.logTime(
+              op.table,
+              op.type,
+              op.location,
+              SyncManager.remoteOperationsLogsTime.create
+            );
+            SyncManager.remoteOperationsLogsTime.create = [];
+            SyncManager.remoteOperationsLogsTasks.create = null;
+          }, 10000);
+        break;
+      case 'UPDATE':
+        SyncManager.remoteOperationsLogsTime.update.push(duration);
+        if (SyncManager.remoteOperationsLogsTasks.update == null)
+          SyncManager.remoteOperationsLogsTasks.update = setTimeout(() => {
+            SyncManager.logTime(
+              op.table,
+              op.type,
+              op.location,
+              SyncManager.remoteOperationsLogsTime.update
+            );
+            SyncManager.remoteOperationsLogsTime.update = [];
+            SyncManager.remoteOperationsLogsTasks.update = null;
+          }, 10000);
+        break;
+      case 'DELETE':
+        SyncManager.remoteOperationsLogsTime.delete.push(duration);
+        if (SyncManager.remoteOperationsLogsTasks.delete == null)
+          SyncManager.remoteOperationsLogsTasks.delete = setTimeout(() => {
+            SyncManager.logTime(
+              op.table,
+              op.type,
+              op.location,
+              SyncManager.remoteOperationsLogsTime.delete
+            );
+            SyncManager.remoteOperationsLogsTime.delete = [];
+            SyncManager.remoteOperationsLogsTasks.delete = null;
+          }, 10000);
+        break;
+    }
+  }
+
   // log time between now and SyncPendinOperations that have been completed
-  private static logTime(operations: SyncPendingOperation[]) {
+  private static logLocalOperationTime(operations: SyncPendingOperation[]) {
     if (operations.length === 0) return;
 
     const now = new Date();
-
-    if (operations.length == 1 && operations[0].location === 'SUPABASE') {
-      // TODO aggregate operations logs
-      const op = operations[0];
-      switch (op.type) {
-        case 'CREATE':
-          SyncManager.remoteOperationsLogsTemp.create.push(op);
-          if (SyncManager.remoteOperationsLogsTasks.create == null)
-            SyncManager.remoteOperationsLogsTasks.create = setTimeout(() => {
-              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.create);
-              SyncManager.remoteOperationsLogsTemp.create = [];
-              SyncManager.remoteOperationsLogsTasks.create = null;
-            }, 20000);
-          break;
-        case 'UPDATE':
-          SyncManager.remoteOperationsLogsTemp.update.push(op);
-          if (SyncManager.remoteOperationsLogsTasks.update == null)
-            SyncManager.remoteOperationsLogsTasks.update = setTimeout(() => {
-              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.update);
-              SyncManager.remoteOperationsLogsTemp.update = [];
-              SyncManager.remoteOperationsLogsTasks.update = null;
-            }, 20000);
-          break;
-        case 'DELETE':
-          SyncManager.remoteOperationsLogsTemp.delete.push(op);
-          if (SyncManager.remoteOperationsLogsTasks.delete == null)
-            SyncManager.remoteOperationsLogsTasks.delete = setTimeout(() => {
-              SyncManager.logTime(SyncManager.remoteOperationsLogsTemp.delete);
-              SyncManager.remoteOperationsLogsTemp.delete = [];
-              SyncManager.remoteOperationsLogsTasks.delete = null;
-            }, 20000);
-          break;
-      }
-      return;
-    }
-
     const durationArray: number[] = [];
+
     for (const operation of operations) {
       const duration = now.getTime() - operation.date.getTime();
       durationArray.push(duration);
     }
-    console.log(`${operations[0].table} ${operations[0].type} on ${operations[0].location} duration results:
-    - Average: ${durationArray.reduce((a, b) => a + b) / durationArray.length}
-    - Max: ${durationArray.reduce((a, b) => (a > b ? a : b))}ms
-    - Min: ${durationArray.reduce((a, b) => (a < b ? a : b))}ms`);
+
+    SyncManager.logTime(operations[0].table, operations[0].type, operations[0].location, durationArray);
+  }
+
+  private static logTime(table: string, type: string, location: string, durations: number[]) {
+    console.log(`${table} ${type} on ${location} duration results:
+    - Average: ${durations.reduce((a, b) => a + b) / durations.length}
+    - Max: ${durations.reduce((a, b) => (a > b ? a : b))}ms
+    - Min: ${durations.reduce((a, b) => (a < b ? a : b))}ms
+    
+    For ${durations.length} operations`);
   }
 
   public getState(): ListenerState {
