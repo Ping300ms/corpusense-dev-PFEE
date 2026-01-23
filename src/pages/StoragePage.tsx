@@ -318,7 +318,7 @@ const StoragePage = () => {
               key={index}
               className={"mb-2 flex items-center gap-4 justify-between p-1" + (index !== userManifests.length - 1 ? ' border-b' : '')}
             >
-              <a className="hover:text-blue-800" href={`${hrefPath}${data.url}`}>
+              <a className="hover:text-blue-800 w-fit" href={`${hrefPath}${data.url}`}>
                 {data.name}
               </a>
               <div className={"flex gap-2"}>
@@ -336,7 +336,7 @@ const StoragePage = () => {
                   <Lock />
                   Privé
                 </Button>
-                  <Button onClick={() => openShareManifestDialog(userId + "/" + data.name, data.url)}>
+                  <Button className={"z-40"} onClick={() => openShareManifestDialog(userId + "/" + data.name, data.url)}>
                     <Share2 />
                     Partager
                   </Button>
