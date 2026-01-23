@@ -13,6 +13,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormMessage } 
 import { Input } from '@/components/ui/input.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Loader, Trash } from 'lucide-react';
+import emailjs from '@emailjs/browser';
 
 const contentFormSchema = z.object({
   mailInput: z.string().nonempty({ message: i18next.t('form_error_required') }),
@@ -20,9 +21,10 @@ const contentFormSchema = z.object({
 
 interface ShareFormProps extends FormProps{
   path: string;
+  manifestUrl: string;
 }
 
-const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path }: ShareFormProps) => {
+const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path, manifestUrl }: ShareFormProps) => {
   const currentManifestId = useAppSelector(selectManifestURL) ?? '';
   const { isLoading, loadedData, error } = useAppSelector((state) => state.manifests);
   const [loadindCall, setLoadingCall] = useState(false);
@@ -30,6 +32,8 @@ const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path }: ShareFo
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/add-access-right?object_path=${path}`;
   const [ token, setToken ] = useState<string | undefined>();
   const [mails, setMails] = useState<string[]>([]);
+
+  const redirectionUrl : string =  `${window.location.origin}${import.meta.env.VITE_BASE_PATH ?? ''}/manifest?manifestId=`;
 
   const form = useForm<z.infer<typeof contentFormSchema>>({
     resolver: zodResolver(contentFormSchema),
@@ -62,6 +66,20 @@ const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path }: ShareFo
     return <Loading />;
   }
 
+  async function sendMail(mail: string) {
+    await emailjs.send(
+      import.meta.env.VITE_EMAILJS_SERVICE_ID as string,
+      import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string,
+      {
+        nom: "Inconnu",
+        email: mail,
+        object: "Nouveau document partagé avec vous - CorpuSense",
+        message: `Bonjour,\nVous avez été invité sur un nouveau document, vous pouvez y accéder via cet url : ${redirectionUrl + manifestUrl}`,
+      },
+      import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string,
+    );
+  }
+
   async function onSubmit(values: z.infer<typeof contentFormSchema>) {
     setLoadingCall(true);
     await fetch("https://zjahjagxmgcmoeisajnq.supabase.co/functions/v1/add-access-right", {
@@ -71,6 +89,7 @@ const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path }: ShareFo
       method: "POST",
       body: JSON.stringify({object_path: path, email: values.mailInput }),
     });
+    await sendMail(values.mailInput);
     await getUserAllowed();
   }
 
