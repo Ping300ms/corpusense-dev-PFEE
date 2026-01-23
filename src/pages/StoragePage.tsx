@@ -336,7 +336,7 @@ const StoragePage = () => {
                   <Lock />
                   Privé
                 </Button>
-                  <Button onClick={() => openShareManifestDialog("/" + userId + "/" + data.name)}>
+                  <Button onClick={() => openShareManifestDialog(userId + "/" + data.name, data.url)}>
                     <Share2 />
                     Partager
                   </Button>

@@ -110,13 +110,13 @@ const useDialog = () => {
     });
   };
 
-  const openShareManifestDialog = (object_path : string) => {
+  const openShareManifestDialog = (object_path : string, manifestUrl: string) => {
     console.log("PATH: " + object_path);
     openFormDialog({
       title: "Partager le manifest",
       confirmLabel: "Partager",
       renderForm: (formRef) => (
-        <ShareManifestForm formRef={formRef} setCanSubmit={setCanSubmit} closeDialog={closeDialog} path={object_path}/>
+        <ShareManifestForm formRef={formRef} setCanSubmit={setCanSubmit} closeDialog={closeDialog} path={object_path} manifestUrl={manifestUrl}/>
       ),
       closeOnAction: false,
     });
