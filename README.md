@@ -2,42 +2,57 @@
 
 ## Dépôts
 
-### <https://github.com/mezanno/corpusense>
+Ce projet est un fork du projet suivant :
 
-Il s'agit du dépôt principal de CorpuSense. Composé de 3 branches :
+### <https://github.com/mezanno/corpusense-dev>
 
-- main
-- develop : branche destinée à recevoir les PR des forks du dépôt
-- gh-pages : branche contenant le build de l'application (généré automatiquement lors d'un push sur la branche develop)
+---
+## Objectifs
 
-### <https://github.com/Ping300ms/corpusense-dev-PFEE>
+Par rapport au projet original, nous avons intégré des capacités de synchronisation avancées :
 
-Il s'agit d'un fork. Composé de 2 branches :
+- Cloud Storage : Enregistrez et sécurisez vos collections dans le cloud.
 
-- develop : branche de développement
-- gh-pages : branche contenant le build de l'application (généré automatiquement lors d'un push sur la branche develop)
+- Sync Offline-Online : Travaillez sans connexion, vos données se synchronisent automatiquement dès le retour du réseau.
 
-Cette structure nous permet d'avoir en ligne 2 builds :
+- Collaboration Temps Réel : Éditez et gérez vos documents à plusieurs simultanément.
 
-- <https://mezanno.xyz/corpusense/> : version stable de l'application
-- <https://mezanno.xyz/corpusense-dev/> : version d'essai de l'application utilisée pour les tests lors du développement
+- Partage Facilités : Système de partage de documents entre utilisateurs.
 
+---
 ## Technos utilisées
 
-- React : https://react.dev/
-- Redux (store) : https://redux.js.org/
-- Redux-Saga (opérations asynchrones) : https://redux-saga.js.org/
-- Shadcn/UI (composants React): https://ui.shadcn.com/
-- Tailwind CSS (framework CSS): https://tailwindcss.com/
-- Dexie (wrapper pour IndexedDB): https://dexie.org/
-- Annotorious + OpenSeaDragon (affichage d'images IIIF + annotation d'images) : https://annotorious.dev/
+En plus des technos utilisées par le projet d'origine
 - Supabase : https://supabase.io/
-- Yjs : https://yjs.dev/
+- Dexie Observable : https://old.dexie.org/docs/Observable/Dexie.Observable
 
-## Prérequis
+---
+## Installation
+### Prérequis
 - node.js (version LTS moderne)
 - npm
+- Avoir un compte supabase : https://supabase.com/
 
-## Installation
-- npm install
-- npm run dev
+### 1. Configuration de la Database
+1. Créer un nouveau projet sur Supabase
+2. Récupérez vos identifiants dans l'onglet "Project Overview" dans la section "Connect to your project" :
+   - Project URL
+   - Publishable API Key
+3. Exécutez les scripts SQL situés dans src/deployments/ directement dans l'Éditeur SQL de votre tableau de bord Supabase pour initialiser le schéma.
+
+### 2. Configuration locale
+Créez un fichier .env à la racine du projet :
+````
+VITE_SUPABASE_URL={votre url de projet} 
+VITE_SUPABASE_ANON_KEY={votre clé d'api anonyme}
+````
+### 3. Lancement
+Dans un terminal à la racine du projet :
+```shell
+npm install
+npm run dev
+```
+
+---
+
+**Note sur l'usage** : Une fois l'application lancée, créez un compte utilisateur pour activer les fonctionnalités de synchronisation cloud.
