@@ -11,12 +11,19 @@ import {
 import Backup from '@/data/models/Backup.ts';
 import { BackupShares } from '@/data/models/BackupShares.ts';
 
+/**
+ * Enum representing the possible states of the listener.
+ */
 export enum ListenerState {
   DISCONNECTED = 'disconnected',
   SUBSCRIBING = 'subscribing',
   SUBSCRIBED = 'subscribed',
 }
 
+/**
+ * Handles real-time Supabase subscriptions with built-in
+ * automatic reconnection logic (exponential backoff).
+ */
 export class SupabaseRealtimeListener {
   private readonly backoffMultiplier: number;
   private readonly baseRetryDelay: number;
@@ -37,6 +44,10 @@ export class SupabaseRealtimeListener {
   private readonly tableName: string;
   private listenerState: ListenerState = ListenerState.DISCONNECTED;
 
+  /**
+   * Initializes a new instance of the real-time listener.
+   * @param properties Configuration properties for the listener.
+   */
   constructor({
                 backoffMultiplier = 2,
                 baseRetryDelay = 2_000,
@@ -69,6 +80,10 @@ export class SupabaseRealtimeListener {
     this.databaseSchemaName = databaseSchemaName
   }
 
+  /**
+   * Removes the existing channel, cleans up internal state, and resets retry attempts.
+   * @returns A promise that resolves once the channel is successfully removed.
+   */
   public removeExistingChannel = async () => {
     if (!this.channel) return
 
@@ -84,6 +99,9 @@ export class SupabaseRealtimeListener {
     }
   }
 
+  /**
+   * Resets internal variables related to reconnection attempts.
+   */
   private resetRetries = () => {
     this.isRetrying = false
     this.retryCount = 0
@@ -92,6 +110,10 @@ export class SupabaseRealtimeListener {
     this.retryTimeout = undefined
   }
 
+  /**
+   * Manages the exponential backoff logic for reconnection.
+   * Calculates the delay based on the current retry count and schedules a new subscription attempt.
+   */
   private retryToSubscribe = () => {
     this.isRetrying = true
     this.retryCount += 1
@@ -112,6 +134,12 @@ export class SupabaseRealtimeListener {
     }, delay)
   }
 
+  /**
+   * Initializes the Supabase channel subscription.
+   * Verifies user authentication, configures event listeners (INSERT, UPDATE, DELETE, SHARE),
+   * and starts the subscription process.
+   * @returns A promise that resolves after initialization.
+   */
   subscribe = async () => {
     if (this.listenerState === ListenerState.SUBSCRIBING ||
       this.listenerState === ListenerState.SUBSCRIBED) return; // prevent multiple subscribe
@@ -171,6 +199,12 @@ export class SupabaseRealtimeListener {
       })
   }
 
+  /**
+   * Handles changes in the Supabase subscription status.
+   * Triggers the retry procedure if the connection is lost or encounters an error.
+   * @param status The new subscription status provided by Supabase.
+   * @param error The error object returned by the Realtime client, if any.
+   */
   private subscribeStateHandler(status: REALTIME_SUBSCRIBE_STATES, error?: Error) {
     console.info(`Channel status: ${status}`)
 
@@ -202,6 +236,10 @@ export class SupabaseRealtimeListener {
     }
   }
 
+  /**
+   * Returns the current state of the listener.
+   * @returns Current state: DISCONNECTED, SUBSCRIBING, or SUBSCRIBED.
+   */
   public getState(): ListenerState {
     return this.listenerState;
   }

@@ -48,7 +48,7 @@ db.version(1).stores({
 });
 
 dbSync.version(1).stores({
-  pendingOperations: '&id, type, location, table, object_id, date',
+    pendingOperations: '&id, type, location, table, object_id, date',
 });
 
 export const clearDatabase = async () => {

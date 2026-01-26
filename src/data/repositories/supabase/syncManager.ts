@@ -27,21 +27,35 @@ import { ICreateChange, IDatabaseChange, IDeleteChange, IUpdateChange } from 'de
 const PAGE_SIZE = 1000;
 const IN_CHUNK_SIZE = 500;
 
+/**
+ * SyncManager is the core orchestrator for data synchronization between the local IndexedDB (Dexie)
+ * and the remote Supabase PostgreSQL database.
+ * * It handles:
+ * 1. **Local Observation**: Detects Dexie changes and pushes them to Supabase.
+ * 2. **Real-time Updates**: Listens to Supabase changes and applies them locally.
+ * 3. **Conflict Resolution**: Uses a three-way merge strategy for concurrent edits.
+ * 4. **Offline Resilience**: Manages a queue of "Pending Operations" to replay once online.
+ * 5. **Sharing Logic**: Handles collaborative backup access.
+ * *
+ */
 export class SyncManager {
   private static instance: SyncManager | null = null;
   //region Variables
+  /** Table name in Supabase where all backups are stored. */
   private readonly backupTableName: string = 'backup';
+  /** Fallback date used for the very first pull request. */
   private readonly defaultPullDate = '2003-01-05T08:01:00Z'; // date before project start
   private readonly client: SupabaseClient;
   private readonly dbToSync: typeof db;
   private readonly operationDb: typeof dbSync;
   private lastPull: Date = new Date(this.defaultPullDate);
   private userId: string | null = null;
+  /** Flag to prevent multiple concurrent sync cycles. */
   private isSyncing = false;
-  // sharing purpose, no need to have the exact remote version, only ids and owner_ids are useful
+  /** Cache of collection metadata to optimize relationship resolution (e.g., finding owner_ids). */
   private collectionBackupCache = new Map<string, Backup>(); // collectionId: backup
 
-  // aggregating remote logs to print only once per action
+  /** aggregating remote operations duration to print a log only once all operations are completed. */
   private static remoteOperationsLogsTime: {
     create: number[];
     update: number[];
@@ -69,6 +83,9 @@ export class SyncManager {
 
   //endregion
 
+  /**
+   * Returns the Singleton instance of the SyncManager.
+   */
   public static getInstance(
     client: typeof supabase = supabase,
     dbToSync: typeof db = db,
@@ -92,6 +109,10 @@ export class SyncManager {
   }
 
   //region Initialization
+  /**
+   * Sets up the event listeners for both local database changes and remote real-time events.
+   * Also manages the window's online/offline status to toggle the real-time connection.
+   */
   private initializeListeners() {
     // Dexie → Supabase
     if (!this.dexieChangeUnsubscribe)
@@ -141,6 +162,11 @@ export class SyncManager {
     window.addEventListener('offline', this.onOfflineCallback);
   }
 
+  /**
+   * Performs the initial synchronization:
+   * 1. Pulls all remote updates since the last known sync date.
+   * 2. Replays operations performed locally while offline.
+   */
   public async InitSync() {
     if (this.isSyncing) return; // prevent parallel syncing
     this.isSyncing = true;
@@ -151,6 +177,11 @@ export class SyncManager {
   //endregion
 
   //region Supabase CRUD
+  /**
+   * Fetches a single record from the remote backup table.
+   * @param object_id The unique identifier of the content.
+   * @param type The table name/type (annotations, collections, etc.).
+   */
   public async read(object_id: string, type: SyncableObjectName) {
     const { data, error } = await this.client
       .from(this.backupTableName)
@@ -166,6 +197,11 @@ export class SyncManager {
     return { data, error: null };
   }
 
+  /**
+   * Efficiently fetches multiple records using pagination and chunking.
+   * @param objects_id Array of object IDs to retrieve.
+   * @param type The object type/table.
+   */
   public async readMultiple(
     objects_id: string[],
     type: SyncableObjectName,
@@ -242,6 +278,10 @@ export class SyncManager {
     return res;
   }
 
+  /**
+   * Determines which collection an object belongs to.
+   * Required for the 'part_of' field in Supabase to maintain hierarchical visibility.
+   */
   private async getPartOf(
     object: SyncableObject,
     type: 'annotations' | 'collectionContents',
@@ -266,7 +306,13 @@ export class SyncManager {
     return collection.id;
   }
 
-  // op is only useful in replay mode and must be corresponding to objects list order
+  /**
+   * Pushes new local objects to the remote server.
+   * Creates a 'Pending Operation' to track the request status.
+   * @param objects Array of new objects to sync.
+   * @param type The database table.
+   * @param op Optional pre-existing operations (used during replay).
+   */
   public async create(
     objects: SyncableObject[],
     type: SyncableObjectName,
@@ -325,6 +371,17 @@ export class SyncManager {
       toInsert.forEach((b) => this.collectionBackupCache.set(b.object_id, b));
   }
 
+  /**
+   * Performs a logical deletion (soft delete) of objects on the remote server.
+   * * This method marks records in Supabase by setting the `deleted_at` timestamp.
+   * It first fetches the current remote state to ensure only existing records are updated.
+   * If an object does not exist on the server, the operation is skipped for that specific ID.
+   * @param objects_id - Array of unique identifiers for the objects to be deleted.
+   * @param type - The name of the syncable table/object type (e.g., 'annotations', 'collections').
+   * @param op - (Optional) Pre-existing pending operations. If omitted, new 'DELETE'
+   * operations will be registered in the local operation database.
+   * @returns A promise that resolves once the remote upsert is complete.
+   */
   public async delete(
     objects_id: string[],
     type: SyncableObjectName,
@@ -373,6 +430,24 @@ export class SyncManager {
       toUpsert.forEach((b) => this.collectionBackupCache.delete(b.object_id));
   }
 
+  /**
+   * Pushes local modifications to the remote server with integrated conflict resolution.
+   * The workflow follows these steps:
+   * 1. Fetches current remote versions for all changed objects.
+   * 2. If a remote version is missing, it falls back to the `create` logic.
+   * 3. If a remote version exists, it applies a three-way merge strategy to resolve conflicts
+   * between local changes and remote data.
+   * 4. If the merge results in data different from the current local state, the local
+   * database is updated to reflect the merged result.
+   * 5. Finally, pushes the merged versions to Supabase via an upsert.
+   * @param changes - Array of change sets, each containing the `newObj` (current state)
+   * and `oldObj` (state before current local changes).
+   * @param type - The name of the syncable table/object type.
+   * @param op - (Optional) Pre-existing pending operations. If omitted, new 'UPDATE'
+   * operations will be registered locally.
+   * @returns A promise that resolves once the remote synchronization and potential
+   * local database corrections are finished.
+   */
   public async push(
     changes: { newObj: SyncableObject; oldObj: SyncableObject }[],
     type: SyncableObjectName,
@@ -419,12 +494,13 @@ export class SyncManager {
         mergedToSaveInLocal.push(merged);
         if (type === 'collectionContents') {
           const contentSize = (merged as CollectionContent).content.length;
+          // Don't register the operation to make auto replication in supabase
           await this.dbToSync.collections.update(merged.id, {
             contentSize,
           });
         }
         // TODO if Annotation order change update all Annotations order
-        // How ?
+        // How ? When ?
       }
 
       toPush.push({
@@ -460,6 +536,10 @@ export class SyncManager {
   //endregion
 
   //region Synchronization
+  /**
+   * Iterates through the local queue of pending operations and attempts to
+   * synchronize them with the server. Typically called after regaining internet access.
+   */
   public async replayPendingOperations(): Promise<void> {
     console.log('Replay pending operations');
     const start = performance.now();
@@ -529,6 +609,13 @@ export class SyncManager {
     );
   }
 
+  /**
+   * Re-attempts a batch of local insertion operations that were queued while offline.
+   * It validates that the objects still exist in the local database before calling the remote creation logic.
+   * @param insertOperation - The list of pending creation operations to replay.
+   * @param table - The name of the syncable table where the records should be created.
+   * @returns A promise that resolves once the records are pushed to the remote server.
+   */
   private async replayInsert(insertOperation: SyncPendingOperation[], table: SyncableObjectName) {
     const { objects, validOperations } = await this.chekValidOperations(
       insertOperation,
@@ -537,6 +624,14 @@ export class SyncManager {
     await this.create(objects, table, validOperations);
   }
 
+  /**
+   * Re-attempts a batch of local update operations queued during an offline session.
+   * It reconstructs the change set (new vs old) for each object and triggers the conflict resolution logic.
+   * @param updateOperations - The list of pending update operations to replay.
+   * @param table - The name of the syncable table targeted by the updates.
+   * @throws Error if the 'old' version of an object is missing from the operation log, as it is required for merging.
+   * @returns A promise that resolves after the updates are merged and pushed to Supabase.
+   */
   private async replayUpdate(updateOperations: SyncPendingOperation[], table: SyncableObjectName): Promise<void> {
     const { objects, validOperations } = await this.chekValidOperations(
       updateOperations,
@@ -552,6 +647,14 @@ export class SyncManager {
     );
   }
 
+  /**
+   * Re-attempts a batch of local deletion operations.
+   * It verifies the existence of the objects on the remote server before attempting a soft delete.
+   * If an object is already missing from the server, its pending operation is discarded.
+   * @param deleteOperations - The list of pending deletion operations to replay.
+   * @param table - The name of the syncable table.
+   * @returns A promise that resolves once the remote state is updated and local operation logs are cleaned.
+   */
   private async replayDelete(deleteOperations: SyncPendingOperation[], table: SyncableObjectName) {
     const operationsId: string[] = deleteOperations.map((op) => op.id);
     const remotes = await this.readMultiple(operationsId, table);
@@ -580,6 +683,14 @@ export class SyncManager {
     await this.operationDb.pendingOperations.bulkDelete(operationsIdToRemove);
   }
 
+  /**
+   * Filters a list of pending operations by verifying if the corresponding objects still exist in IndexedDB.
+   * Operations targeting objects that have been physically deleted from the local database are removed
+   * from the pending queue to avoid sync errors.
+   * @param operations - The batch of pending operations to validate.
+   * @param type - The object type/table name.
+   * @returns A promise resolving to an object containing valid local objects and their associated operations.
+   */
   private async chekValidOperations(
     operations: SyncPendingOperation[],
     type: SyncableObjectName,
@@ -605,10 +716,16 @@ export class SyncManager {
       }
     }
 
+    // Clean up operations that no longer have a local object to sync
     void this.operationDb.pendingOperations.bulkDelete(operationsIdToDelete);
     return { objects, validOperations };
   }
 
+  /**
+   * Pulls remote changes that occurred since `lastPull`.
+   * For each change, it computes a "Sync Plan" (what to create/update/delete locally)
+   * and applies it to IndexedDB.
+   */
   public async pullUpdates(): Promise<{ error: string } | null> {
     const start = performance.now();
 
@@ -650,6 +767,18 @@ export class SyncManager {
     return null;
   }
 
+  /**
+   * Fetches incremental updates from the remote Supabase storage for a specific table.
+   * * This method performs a paginated fetch of all records modified since the last
+   * successful synchronization date. It uses a cursor-based approach with `range`
+   * to handle large datasets without overloading memory or hitting gateway limits.
+   * @param table - The name of the syncable object type to fetch (e.g., 'annotations', 'collections').
+   * @param since - An ISO 8601 timestamp string representing the last pull date. Only records
+   * with an `updated_at` value greater than this string will be returned.
+   * @returns A promise resolving to:
+   * - An object containing the accumulated `data` array of partial Backup objects.
+   * - An object containing a `PostgrestError` if the network request fails.
+   */
   private async fetchRemoteUpdates(
     table: SyncableObjectName,
     since: string,
@@ -681,6 +810,11 @@ export class SyncManager {
     return { data: res, error: null };
   }
 
+  /**
+   * Generates a plan of action for a set of remote changes.
+   * Skips objects that have local pending updates to avoid overwriting un-synced local work,
+   * as they will be handled during the `replay` phase.
+   */
   private async computeSyncPlan(
     table: SyncableObjectName,
     remotes: Pick<Backup, 'object_id' | 'content' | 'deleted_at'>[],
@@ -761,6 +895,21 @@ export class SyncManager {
     return { toCreate, toUpdate, toDelete, operations };
   }
 
+  /**
+   * Executes the calculated synchronization plan for a specific table by updating the local database.
+   * * This method performs four concurrent operations to bring the local Dexie state in line with
+   * the remote Supabase state:
+   * 1. **Logging**: Persists the sync operations in the pending operations database to maintain a history/audit trail.
+   * 2. **Deletions**: Removes objects locally that were marked as deleted on the server.
+   * 3. **Insertions**: Adds new objects that exist on the server but not yet locally.
+   * 4. **Updates**: Synchronizes existing local objects with their newer remote versions.
+   * * All operations are pushed into a task array and executed in parallel using `Promise.all` to
+   * maximize performance and minimize the synchronization window.
+   * @param table - The name of the syncable table being updated.
+   * @param plan - The computed sync plan containing arrays of objects to create, update, delete,
+   * and the associated operation logs.
+   * @returns A promise that resolves once all local database write operations are completed.
+   */
   private async applySyncPlan(
     table: SyncableObjectName,
     plan: Awaited<ReturnType<typeof this.computeSyncPlan>>,
@@ -777,6 +926,13 @@ export class SyncManager {
   //endregion
 
   //region Share logic
+  /**
+   * Shares a collection or model with another user via a Supabase RPC call.
+   * @param objectId ID of the object to share.
+   * @param sharedUserMail Email of the recipient.
+   * @param type Type of the object to share ('collections' or 'models').
+   * @param permission Access level ('R', 'RW', 'RWD').
+   */
   public async share(
     objectId: string,
     sharedUserMail: string,
@@ -814,6 +970,18 @@ export class SyncManager {
     return null; // success
   }
 
+  /**
+   * Handles incoming real-time notifications when a resource is shared with the current user.
+   * * This listener filters the payload to ensure the current user is the intended recipient.
+   * If valid, it performs a deep fetch from the remote 'backup' table to retrieve the shared
+   * object (e.g., a collection) and all its associated child entities (e.g., annotations
+   * linked via 'part_of'). Finally, it persists all retrieved content into the local IndexedDB.
+   * @param payload - The Supabase Realtime insertion payload from the 'backup_shares' table.
+   * - `payload.new.backup_id`: The ID of the root backup object being shared.
+   * - `payload.new.shared_user`: The UUID of the recipient user to check against current auth state.
+   * @returns A promise that resolves once the shared data and its dependencies are locally stored.
+   * Returns an error object if the user is not authenticated.
+   */
   public async onShared(payload: RealtimePostgresInsertPayload<BackupShares>) {
     const { backup_id, shared_user } = payload.new;
 
@@ -858,7 +1026,20 @@ export class SyncManager {
   //endregion
 
   //region Pending operation utils
-
+  /**
+   * Retrieves a filtered map of pending operations from the local synchronization queue.
+   * * This utility queries the `operationDb` to find tasks that match a specific state and target.
+   * It is primarily used to identify which local changes are currently "in flight" to avoid
+   * redundant processing or to skip synchronization for operations already handled by the manager.
+   * @param type - The action type to filter by: `'CREATE'`, `'UPDATE'`, or `'DELETE'`.
+   * @param target - The intended destination or source of the operation:
+   * - `'DEXIE'`: Operations originating from remote changes being applied locally.
+   * - `'SUPABASE'`: Local changes waiting to be pushed to the remote server.
+   * @param table - The name of the syncable table (object type) the operations belong to.
+   * @param objects_id - An array of object identifiers to search for within the queue.
+   * @returns A promise resolving to a `Map` where the key is the `object_id` and the value
+   * is the corresponding `SyncPendingOperation` metadata.
+   */
   private async getPendingOperations(
     type: 'CREATE' | 'UPDATE' | 'DELETE',
     target: 'DEXIE' | 'SUPABASE',
@@ -878,6 +1059,11 @@ export class SyncManager {
     return res;
   }
 
+  /**
+   * Adds operations to the persistent local queue.
+   * If an operation for the same object already exists, it updates the date but
+   * preserves the original 'old' state to ensure consistent merging.
+   */
   private async addPendingOperations(
     type: 'CREATE' | 'UPDATE' | 'DELETE',
     location: 'DEXIE' | 'SUPABASE',
@@ -914,6 +1100,11 @@ export class SyncManager {
     return toPut;
   }
 
+  /**
+   * Removes a set of operations from the pending operations database.
+   * @param operations - The list of operations to delete.
+   * @param log - Whether to trigger performance logging after deletion.
+   */
   private async removePendingOperations(operations: SyncPendingOperation[], log = true) {
     await this.operationDb.pendingOperations.bulkDelete(operations.map((o) => o.id));
     if (!log || operations.length == 0) return;
@@ -925,7 +1116,14 @@ export class SyncManager {
   //endregion
 
   //region Local handler
-
+  /**
+   * Filters out local database changes that were actually triggered by the SyncManager itself.
+   * This prevents infinite sync loops (Echo effect) where a remote update triggers a local change
+   * which would otherwise be pushed back to the server.
+   * @param objects - A map of database changes indexed by object ID.
+   * @param type - The type of operation ('CREATE', 'UPDATE', 'DELETE').
+   * @param table - The table name being targeted.
+   */
   private async filterLocalDoneOperations(
     objects: Map<string, IDatabaseChange>,
     type: 'CREATE' | 'UPDATE' | 'DELETE',
@@ -944,6 +1142,10 @@ export class SyncManager {
     await this.removePendingOperations(toRemove);
   }
 
+  /**
+   * Orchestrates the push of new local records to Supabase.
+   * @param changes - A nested map containing table names and their respective creation changes.
+   */
   private async onLocalInsert(changes: Map<SyncableObjectName, Map<string, ICreateChange>>) {
     for (const type of SyncableTables) {
       const objectsMap = changes.get(type);
@@ -957,6 +1159,10 @@ export class SyncManager {
     }
   }
 
+  /**
+   * Orchestrates the push of updated local records to Supabase.
+   * @param changes - A nested map containing table names and their respective update changes.
+   */
   private async onLocalUpdate(changes: Map<SyncableObjectName, Map<string, IUpdateChange>>) {
     for (const table of SyncableTables) {
       const objectsMap = changes.get(table);
@@ -972,6 +1178,10 @@ export class SyncManager {
     }
   }
 
+  /**
+   * Orchestrates the push of deleted local records to Supabase.
+   * @param changes - A nested map containing table names and their respective deletion changes.
+   */
   private async onLocalDelete(changes: Map<SyncableObjectName, Map<string, IDeleteChange>>) {
     for (const table of SyncableTables) {
       const objectsMap = changes.get(table);
@@ -986,6 +1196,12 @@ export class SyncManager {
   //endregion
 
   //region Remote handler
+  /**
+   * Real-time handler for remote INSERT events.
+   * If the insert matches a local pending operation, it marks it as completed.
+   * Otherwise, it applies the remote record to the local IndexedDB.
+   * @param payload - The Supabase Realtime payload for the insert event.
+   */
   private async onRemoteInsert(payload: RealtimePostgresInsertPayload<Backup>): Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
@@ -998,6 +1214,11 @@ export class SyncManager {
     else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
   }
 
+  /**
+   * Real-time handler for remote UPDATE events.
+   * Validates if the update originated from the current client before applying it locally.
+   * @param payload - The Supabase Realtime payload for the update event.
+   */
   private async onRemoteUpdate(payload: RealtimePostgresUpdatePayload<Backup>): Promise<void> {
     const operation = await this.operationDb.pendingOperations.get(payload.new.change_id);
     if (operation !== undefined) {
@@ -1010,6 +1231,11 @@ export class SyncManager {
     else localStorage.setItem(`${this.userId}-lastPull`, payload.new.updated_at);
   }
 
+  /**
+   * Real-time handler for remote DELETE events.
+   * Removes the corresponding record from IndexedDB if it exists.
+   * @param payload - The Supabase Realtime payload for the delete event.
+   */
   private async onRemoteDelete(payload: RealtimePostgresDeletePayload<Backup>): Promise<void> {
     if (payload.old == null) return;
     const { error } = await this.applyRemoteDelete(payload.old);
@@ -1017,6 +1243,16 @@ export class SyncManager {
       this.localRequestErrorHandler([payload.old.object_id], 'DELETE', error);
   }
 
+  /**
+   * Processes a remote backup record and reflects the changes in the local IndexedDB.
+   * * This function acts as the local dispatcher for remote updates. It determines if the
+   * change is a deletion, an insertion, or an update. It also registers a 'DEXIE'
+   * location pending operation before writing to the database; this prevents the
+   * SyncManager from erroneously pushing this same change back to Supabase.
+   * @param backup - The full backup record received from the Supabase Realtime stream or a pull request.
+   * @returns A promise resolving to an object containing a `DexieError` if the local write fails, or null otherwise.
+   * @throws Rethrows non-Dexie related errors encountered during execution.
+   */
   private async applyRemoteChange(backup: Backup): Promise<{ error: DexieError | null }> {
     if (backup.deleted_at != null) {
       // remote has been softly deleted
@@ -1062,7 +1298,15 @@ export class SyncManager {
     return { error: null };
   }
 
-  // remote has been hard deleted
+  /**
+   * Synchronizes a remote deletion (soft or hard) to the local database.
+   * * If the object exists locally, it registers a 'DELETE' operation in the pending queue
+   * to bypass the local observer and physically removes the record from IndexedDB.
+   * If the object is already missing locally, the function exits silently.
+   * @param backup - A partial backup object containing at least the `object_id` and `object_type`.
+   * @returns A promise resolving to an error status object. Returns null if the object was already deleted.
+   * @throws Rethrows non-Dexie related errors encountered during execution.
+   */
   private async applyRemoteDelete(backup: Partial<Backup>): Promise<{ error: DexieError | null }> {
     const { object_id, object_type } = backup;
     if (object_id === undefined) return { error: null };
@@ -1092,9 +1336,12 @@ export class SyncManager {
   //endregion
 
   //region Auth handlers
-
+  /**
+   * Handles the 'SIGNED_IN' auth event.
+   * Resets the sync state and initiates the first pull.
+   */
   private async onSignedIn() {
-    // purge DEXIE operations at start
+    // purge DEXIE operations, maybe don't and try to retry those operations
     await this.operationDb.pendingOperations.where('location').equals('DEXIE').delete();
     await this.realtimeListener?.subscribe();
     const userId = await this.getUser();
@@ -1103,6 +1350,10 @@ export class SyncManager {
     if (lastPull !== null) this.lastPull = new Date(lastPull);
   }
 
+  /**
+   * Handles the 'SIGNED_OUT' auth event.
+   * Cleans up listeners and resets user-specific variables.
+   */
   private async onSignedOut() {
     this.collectionBackupCache = new Map();
     this.userId = null;
@@ -1113,20 +1364,32 @@ export class SyncManager {
   //endregion
 
   //region Error handlers
+  /**
+   * Standardized error handler for failed Supabase requests.
+   * @param ids - The IDs of the objects involved in the failed request.
+   * @param operation - The type of operation that failed ('CREATE', 'GET', 'UPDATE', etc.).
+   * @param error - The PostgrestError returned by Supabase.
+   */
   private remoteRequestErrorHandler(
-    key: string[],
+    ids: string[],
     operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET',
     error: PostgrestError,
   ): void {
-    console.log(`[Supabase] Remote ${operation} failed: ${error.message}`, error, key);
+    console.log(`[Supabase] Remote ${operation} failed: ${error.message}`, error, ids);
   }
 
+  /**
+   * Standardized error handler for failed local IndexedDB requests.
+   * @param ids - The IDs of the objects involved.
+   * @param operation - The type of action that failed.
+   * @param error - The DexieError encountered.
+   */
   private localRequestErrorHandler(
-    key: string[],
+    ids: string[],
     operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'GET',
     error: DexieError,
   ): void {
-    console.log(`[Dexie] Local ${operation} on ${key.toString()} failed: ${error.message}`, error);
+    console.log(`[Dexie] Local ${operation} on ${ids.toString()} failed: ${error.message}`, error);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1221,6 +1484,11 @@ export class SyncManager {
     return state;
   }
 
+  /**
+   * Retrieves the current authenticated user ID.
+   * Caches the ID and manages the transition between login states.
+   * @returns The UUID of the user or null if not authenticated.
+   */
   private async getUser(): Promise<string | null> {
     if (this.userId == null) this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
     // if (this.userId == null) console.debug('User not logged in');
