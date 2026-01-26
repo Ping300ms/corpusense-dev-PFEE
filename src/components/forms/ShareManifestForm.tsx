@@ -69,12 +69,13 @@ const ShareManifestForm = ({ formRef, closeDialog, setCanSubmit, path, manifestU
   async function sendMail(mail: string) {
     await emailjs.send(
       import.meta.env.VITE_EMAILJS_SERVICE_ID as string,
-      import.meta.env.VITE_EMAILJS_TEMPLATE_ID as string,
+      import.meta.env.VITE_EMAILJS_TEMPLATE_ID_SEND_SHARING as string,
       {
-        nom: "Inconnu",
+        nom: "CorpuSense",
         email: mail,
         object: "Nouveau document partagé avec vous - CorpuSense",
         message: `Bonjour,\nVous avez été invité sur un nouveau document, vous pouvez y accéder via cet url : ${redirectionUrl + manifestUrl}`,
+        title: "Nouveau manifest partagé sur CorpuSense"
       },
       import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string,
     );
