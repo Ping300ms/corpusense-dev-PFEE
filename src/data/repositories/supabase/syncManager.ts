@@ -191,6 +191,7 @@ export class SyncManager {
       .is('deleted_at', null)
       .maybeSingle<Backup>();
 
+    if (error != null) console.error(object_id);
     if (error !== null) return { data: null, error };
     if (data == null) return null; // value not found
     if (data.object_type === 'collections') this.collectionBackupCache.set(data.object_id, data);
@@ -1000,6 +1001,7 @@ export class SyncManager {
       return;
     }
 
+    const tasks: Promise<void>[] = [];
     const annotations = [];
     for (const entity of data) {
       switch (entity.object_type) {
@@ -1007,20 +1009,31 @@ export class SyncManager {
           annotations.push(entity.content as Annotation);
           break;
         case 'collections':
-          void this.dbToSync.collections.put(entity.content as CollectionDetails);
+          tasks.push((async () => {
+            await this.addPendingOperations('CREATE', 'DEXIE', 'collections', [{object_id: entity.content.id}])
+            await this.dbToSync.collections.put(entity.content as CollectionDetails);
+          })());
           break;
         case 'collectionContents':
-          void this.dbToSync.collectionContents.put(entity.content as CollectionContent);
+          tasks.push((async () => {
+            await this.addPendingOperations('CREATE', 'DEXIE', 'collectionContents', [{object_id: entity.content.id}])
+            await this.dbToSync.collectionContents.put(entity.content as CollectionContent);
+          })());
           break;
         case 'models':
-          void this.dbToSync.models.put(entity.content as DataModel);
-          break;
-        default:
+          tasks.push((async () => {
+            await this.addPendingOperations('CREATE', 'DEXIE', 'models', [{object_id: entity.content.id}])
+            await this.dbToSync.models.put(entity.content as DataModel);
+          })());
           break;
       }
     }
 
-    void this.dbToSync.annotations.bulkPut(annotations);
+    tasks.push((async () => {
+      await this.addPendingOperations('CREATE', 'DEXIE', 'annotations', annotations.map(a => ({object_id: a.id})))
+      await this.dbToSync.annotations.bulkPut(annotations);
+    })());
+    await Promise.all(tasks);
   }
 
   //endregion
