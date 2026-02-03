@@ -1503,7 +1503,13 @@ export class SyncManager {
    * @returns The UUID of the user or null if not authenticated.
    */
   private async getUser(): Promise<string | null> {
-    if (this.userId == null) this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
+    if (this.userId == null) {
+      let i = 0;
+      while (this.userId == null && i < 5) {
+        this.userId = (await this.client.auth.getUser()).data.user?.id ?? null;
+        i++;
+      }
+    }
     // if (this.userId == null) console.debug('User not logged in');
     return this.userId;
   }

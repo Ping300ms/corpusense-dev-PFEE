@@ -150,7 +150,7 @@ export class SupabaseRealtimeListener {
 
     let i = 0;
     let user: User | null = null;
-    while (user == null && i < 3) {
+    while (user == null && i < 5) {
       user = (await this.supabaseClient.auth.getUser()).data.user;
       i++;
     }
