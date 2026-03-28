@@ -16,6 +16,7 @@ import { CanvasScope } from '@/data/models/Scope';
 import { Worker } from '@/data/models/Worker';
 import { ReactNode, RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
+import ShareManifestForm from '@/components/forms/ShareManifestForm.tsx';
 
 export type FormProps = {
   formRef: RefObject<HTMLFormElement | null>;
@@ -104,6 +105,18 @@ const useDialog = () => {
       confirmLabel: t('btn_open_manifest'),
       renderForm: (formRef) => (
         <OpenManifestForm formRef={formRef} setCanSubmit={setCanSubmit} closeDialog={closeDialog} />
+      ),
+      closeOnAction: false,
+    });
+  };
+
+  const openShareManifestDialog = (object_path : string, manifestUrl: string) => {
+    console.log("PATH: " + object_path);
+    openFormDialog({
+      title: "Partager le manifest",
+      confirmLabel: "Partager",
+      renderForm: (formRef) => (
+        <ShareManifestForm formRef={formRef} setCanSubmit={setCanSubmit} closeDialog={closeDialog} path={object_path} manifestUrl={manifestUrl}/>
       ),
       closeOnAction: false,
     });
@@ -203,6 +216,7 @@ const useDialog = () => {
     openDuplicateLayoutDialog,
     openRemoveAnnotationsDialog,
     openExportCollectionDialog,
+    openShareManifestDialog
   };
 };
 

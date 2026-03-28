@@ -47,13 +47,9 @@ function* fetchManifestFromURL(url: string): Generator<Effect, Manifest, Manifes
     if (importer !== undefined && importer !== null) {
       console.log("URL AVANT TRY :",url);
       try {
-        console.log("importer :",importer);
         const supabaseUrl : string = import.meta.env.VITE_SUPABASE_URL as string ?? "";
-        console.log("SUPABASE URL :",supabaseUrl);
         let manifest = null;
-        console.log("Avant le if");
         if(supabaseUrl.length > 0 && url.startsWith(supabaseUrl)){
-          console.log("Dans le IF");
           manifest = yield call(fetchManifest, {
             fetchFunction: async () => {
               const { data: { session } } = await supabase.auth.getSession();
@@ -63,12 +59,10 @@ function* fetchManifestFromURL(url: string): Generator<Effect, Manifest, Manifes
                   Authorization: `Bearer ${token}`,
                 },
               });
-              console.log(res);
               if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${await res.text()}`);
               }
               const json = res.json();
-              console.log(json);
               // eslint-disable-next-line @typescript-eslint/no-unsafe-return
               return json;
             },

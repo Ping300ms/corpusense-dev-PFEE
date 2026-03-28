@@ -1,9 +1,6 @@
-import { useAppDispatch, useAppSelector } from '@/hooks/hooks';
+import { useEffect } from 'react';
 import { FormProps } from '@/hooks/ui/useDialog';
-import { loginRequest } from '@/state/reducers/auth';
-import { selectAuthStatus } from '@/state/selectors/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -17,6 +14,9 @@ import {
   FormMessage,
 } from '../ui/form';
 import { Input } from '../ui/input';
+import { Button } from '../ui/button';
+import { useAuth } from '@/hooks/useAuth';
+import { Link } from 'react-router-dom';
 
 const formSchema = z.object({
   email: z.string(),
@@ -25,9 +25,7 @@ const formSchema = z.object({
 
 const LoginForm = ({ formRef, setCanSubmit, closeDialog }: FormProps) => {
   const { t } = useTranslation();
-  const appDispatch = useAppDispatch();
-  const authStatus = useAppSelector(selectAuthStatus);
-  const newlyOpened = useRef(true);
+  const { login, loginWithProvider, loading, error, setError } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -36,18 +34,21 @@ const LoginForm = ({ formRef, setCanSubmit, closeDialog }: FormProps) => {
 
   useEffect(() => {
     setCanSubmit(form.formState.isDirty && form.formState.isValid);
-  }, [form.formState]);
+  }, [form.formState, setCanSubmit]);
 
-  useEffect(() => {
-    if (!newlyOpened.current && closeDialog && authStatus === 'authenticated') {
-      closeDialog();
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    const { error: loginError } = await login(values.email, values.password);
+    if (!loginError) {
+      closeDialog?.();
     }
-  }, [authStatus]);
+  };
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    appDispatch(loginRequest({ email: values.email, password: values.password }));
-    newlyOpened.current = false;
-  }
+  const handleOAuth = async (
+    provider: 'github' | 'google' | 'gitlab' | 'azure'
+  ) => {
+    setError(null);
+    await loginWithProvider(provider);
+  };
 
   return (
     <Form {...form}>
@@ -86,6 +87,59 @@ const LoginForm = ({ formRef, setCanSubmit, closeDialog }: FormProps) => {
             </FormItem>
           )}
         />
+
+        {error !== null && (
+          <div className="text-red-600 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* OAuth Buttons */}
+        <div className="space-y-3">
+          <Button
+            type="button"
+            onClick={() => void handleOAuth('github')}
+            className="w-full bg-gray-800 text-white hover:bg-gray-700"
+            disabled={loading}
+          >
+            {t('form_oauth_github')}
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => void handleOAuth('google')}
+            className="w-full bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
+            disabled={loading}
+          >
+            Connectez-vous via Google
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => void handleOAuth('gitlab')}
+            className="w-full bg-orange-600 text-white hover:bg-orange-700"
+            disabled={loading}
+          >
+            Connectez-vous via GitLab
+          </Button>
+
+          <Button
+            type="button"
+            onClick={() => void handleOAuth('azure')}
+            className="w-full bg-blue-700 text-white hover:bg-blue-800"
+            disabled={loading}
+          >
+            Connectez-vous via Azure
+          </Button>
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
+            {t('no_account')}{' '}
+            <Link to="/register" className="text-blue-500 hover:underline"
+              onClick={() => closeDialog?.()}>
+              {t('btn_register')}
+            </Link>
+          </p>
+
+        </div>
       </form>
     </Form>
   );

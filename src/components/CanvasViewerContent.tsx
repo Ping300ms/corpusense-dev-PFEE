@@ -15,11 +15,12 @@ import {
   useAnnotator,
   useHover,
 } from '@annotorious/react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { CanvasViewerMode } from './reducers/CanvasViewerContext';
 import { useCanvasViewerContext } from './reducers/useCanvasViewerContext';
 import withTools from './withTools';
+import { supabase } from '@/utils/config';
 
 //bleu foncé : #264653
 //ver clair : #2a9d8f
@@ -161,6 +162,16 @@ export const CanvasViewerContent = ({ collectionId }: { collectionId?: string })
     }
   }, [showAnnotations]);
 
+   const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchToken() {
+      const { data: { session } } = await supabase.auth.getSession();
+      setToken(session?.access_token ?? null);
+    }
+    fetchToken();
+  }, []);
+
   const style = (annotation: Annotation, state?: AnnotationState) => {
     const value = annotation.bodies[0]?.value ?? ElementType.TAG;
     return {
@@ -172,25 +183,23 @@ export const CanvasViewerContent = ({ collectionId }: { collectionId?: string })
   };
 
   //TODO : on a des renders qui se produisent quand on déplace une annotation (??)
-  const options = useMemo(
-    () => ({
-      prefixUrl: `${import.meta.env.VITE_BASE_PATH}/images/`,
-      defaultZoomLevel: 0.5,
-      minZoomLevel: 0.1,
-      tileSources: source,
-      loadTilesWithAjax: true,
-      // crossOriginPolicy: 'false',
-      showSequenceControl: true,
-      showHomeControl: true,
-      showFullPageControl: true,
-      gestureSettingsMouse: {
-        clickToZoom: false,
-      },
-      tileRetryMax: 5,
-      tileRetryDelay: 2000,
-    }),
-    [source],
-  );
+  const options = useMemo(() => ({
+    prefixUrl: `${import.meta.env.VITE_BASE_PATH}/images/`,
+    defaultZoomLevel: 0.5,
+    minZoomLevel: 0.1,
+    tileSources: source,
+    loadTilesWithAjax: true,
+    crossOriginPolicy: 'Anonymous' as const,
+    ajaxHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+    showSequenceControl: true,
+    showHomeControl: true,
+    showFullPageControl: true,
+    gestureSettingsMouse: {
+      clickToZoom: false,
+    },
+    tileRetryMax: 5,
+    tileRetryDelay: 2000,
+  }), [source, token]);
 
   return (
     <OpenSeadragonAnnotator

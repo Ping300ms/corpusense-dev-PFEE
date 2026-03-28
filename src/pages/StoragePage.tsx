@@ -14,6 +14,8 @@ import Fireworks from 'react-canvas-confetti/dist/presets/fireworks';
 import { useTranslation } from 'react-i18next';
 import { SyncLoader } from 'react-spinners';
 import { Loader, Lock, LockOpen, Share2 } from 'lucide-react';
+import useDialog from '@/hooks/ui/useDialog.tsx';
+import { Link } from 'react-router-dom';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -79,6 +81,9 @@ const StoragePage = () => {
   const [progressRenderPDFToImages, setProgressRenderPDFToImages] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
   const [userManifests, setUserManifests] = useState<ManifestData[]>([]);
+  const { openShareManifestDialog } = useDialog();
+
+
 
   useEffect(() => {
     void (async () => {
@@ -312,11 +317,14 @@ const StoragePage = () => {
           userManifests.map((data, index) => (
             <div
               key={index}
-              className={"mb-2 flex items-center gap-4 justify-between p-1" + (index !== userManifests.length - 1 ? ' border-b' : '')}
+              className={"mb-2 flex items-center gap-4 justify-between p-1 " + (index !== userManifests.length - 1 ? ' border-b' : '')}
             >
-              <a className="hover:text-blue-800" href={`${hrefPath}${data.url}`}>
+              <Link
+                className="hover:text-blue-800 w-fit "
+                to={`/manifest?manifestId=${data.url}`}
+              >
                 {data.name}
-              </a>
+              </Link>
               <div className={"flex gap-2"}>
               {data.loading ? (
                 <Button>
@@ -324,13 +332,19 @@ const StoragePage = () => {
                   Chargement
                 </Button>
               ) : data.isPrivate ? (
-                <Button
-                  className="text-red-500 bg-red-200 cursor-pointer"
-                  onClick={() => changeBucket(data.name, data.isPrivate)}
-                >
-                  <Lock />
-                  Privé
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    className="text-red-500 bg-red-200 cursor-pointer"
+                    onClick={() => changeBucket(data.name, data.isPrivate)}
+                  >
+                    <Lock />
+                    Privé
+                  </Button>
+                  <Button className={"cursor-pointer"} onClick={() => openShareManifestDialog(userId + "/" + data.name, data.url)}>
+                    <Share2 />
+                    Partager
+                  </Button>
+                </div>
               ) : (
                 <Button
                   className="text-green-500 bg-green-200 cursor-pointer"
@@ -340,10 +354,6 @@ const StoragePage = () => {
                   Public
                 </Button>
               )}
-                <Button>
-                  <Share2 />
-                  Partager
-                </Button>
               </div>
             </div>
           ))
